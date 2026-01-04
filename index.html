@@ -3,675 +3,563 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>8×8 オセロ 師匠AI（強AI＋終盤厳密）</title>
+  <title>Othello Eval Board</title>
   <style>
     :root{
       --bg:#0b1220;
-      --panel:#111a2e;
-      --panel2:#0f1730;
+      --panel:#101a2e;
+      --board:#0a6a3a;
+      --grid:#0f3d2a;
       --text:#e8eefc;
-      --muted:#a9b6d6;
-      --accent:#4da3ff;
-      --good:#36d399;
-      --bad:#fb7185;
-      --cell:#0a7a55;
-      --grid:#064a35;
-      --hint: rgba(255,255,255,.10);
-      --discB:#121826;
-      --discW:#f8fafc;
+      --muted:#a9b7d6;
+      --accent:#7aa2ff;
+      --warn:#ffcc66;
+      --best:#ff5ea8;
     }
+    *{box-sizing:border-box}
     body{
-      margin:0; background:radial-gradient(1200px 600px at 30% 0%, #121c35 0%, var(--bg) 55%);
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", Arial;
+      background: linear-gradient(180deg, #070b14, var(--bg));
       color:var(--text);
-      font-family: ui-sans-serif, system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", Segoe UI, Arial;
+    }
+    header{
+      padding:18px 16px 8px;
+      max-width:980px;
+      margin:0 auto;
+    }
+    h1{
+      margin:0 0 8px;
+      font-size:18px;
+      font-weight:700;
+      letter-spacing:.2px;
+    }
+    .sub{
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.4;
     }
     .wrap{
-      max-width:1100px; margin:0 auto; padding:20px 16px 36px;
-      display:grid; grid-template-columns: 360px 1fr; gap:18px;
+      max-width:980px;
+      margin:0 auto;
+      padding:10px 16px 24px;
+      display:grid;
+      grid-template-columns: 1fr 320px;
+      gap:14px;
     }
-    @media (max-width: 900px){
-      .wrap{ grid-template-columns: 1fr; }
+    @media (max-width: 880px){
+      .wrap{grid-template-columns:1fr; }
     }
-    h1{ font-size:18px; margin:0 0 12px; letter-spacing:.02em; }
     .card{
-      background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      background: rgba(16,26,46,.92);
       border:1px solid rgba(255,255,255,.08);
-      border-radius:14px; padding:14px;
+      border-radius:16px;
       box-shadow: 0 10px 30px rgba(0,0,0,.25);
+      overflow:hidden;
     }
-    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-    .row > *{ flex:0 0 auto; }
-    label{ color:var(--muted); font-size:12px; }
-    select, button, input[type="range"]{
-      background:rgba(255,255,255,.06);
-      color:var(--text);
+    .boardWrap{ padding:14px; }
+    .board{
+      width:100%;
+      aspect-ratio: 1 / 1;
+      display:grid;
+      grid-template-columns: repeat(8, 1fr);
+      background: var(--board);
+      border-radius:14px;
       border:1px solid rgba(255,255,255,.10);
-      border-radius:10px;
-      padding:9px 10px;
-      font-size:14px;
-      outline:none;
+      overflow:hidden;
+    }
+    .cell{
+      position:relative;
+      border:1px solid rgba(15,61,42,.55);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      user-select:none;
+      cursor:pointer;
+      background: rgba(0,0,0,.04);
+    }
+    .cell:hover{ outline:2px solid rgba(122,162,255,.35); outline-offset:-2px; }
+    .disc{
+      width:74%;
+      height:74%;
+      border-radius:999px;
+      box-shadow: inset 0 2px 6px rgba(255,255,255,.16), 0 8px 18px rgba(0,0,0,.35);
+    }
+    .black{ background: radial-gradient(circle at 30% 30%, #3a3a3a, #0b0b0b 65%); }
+    .white{ background: radial-gradient(circle at 30% 30%, #ffffff, #d9d9d9 65%); }
+    .eval{
+      position:absolute;
+      bottom:6px;
+      right:6px;
+      font-size:12px;
+      font-weight:700;
+      letter-spacing:.2px;
+      padding:2px 6px;
+      border-radius:999px;
+      background: rgba(0,0,0,.35);
+      border:1px solid rgba(255,255,255,.10);
+      color:var(--text);
+      backdrop-filter: blur(6px);
+    }
+    .eval.muted{
+      color: rgba(232,238,252,.62);
+      background: rgba(0,0,0,.20);
+      border-color: rgba(255,255,255,.08);
+    }
+    .badge{
+      position:absolute;
+      top:6px;
+      left:6px;
+      font-size:10px;
+      font-weight:800;
+      padding:2px 6px;
+      border-radius:999px;
+      background: rgba(0,0,0,.32);
+      border:1px solid rgba(255,255,255,.10);
+      color: rgba(232,238,252,.80);
+    }
+    .legalDot{
+      position:absolute;
+      width:12px;
+      height:12px;
+      border-radius:999px;
+      background: rgba(255,255,255,.45);
+      box-shadow: 0 0 0 3px rgba(0,0,0,.15);
+      top:10px;
+      right:10px;
+    }
+    .best{
+      outline:3px solid rgba(255,94,168,.70) !important;
+      outline-offset:-3px;
+      box-shadow: inset 0 0 0 999px rgba(255,94,168,.06);
+    }
+    .side{
+      padding:14px;
+    }
+    .row{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-bottom:10px;
     }
     button{
-      cursor:pointer;
-      transition:.15s transform, .15s filter, .15s background;
-      user-select:none;
-    }
-    button:hover{ filter:brightness(1.05); }
-    button:active{ transform: translateY(1px); }
-    .primary{ background: rgba(77,163,255,.18); border-color: rgba(77,163,255,.35); }
-    .danger{ background: rgba(251,113,133,.14); border-color: rgba(251,113,133,.35); }
-    .ghost{ background: rgba(255,255,255,.04); }
-    .tiny{ font-size:12px; padding:6px 8px; border-radius:9px; }
-    .status{
-      margin-top:10px;
-      padding:10px 10px;
-      background:rgba(0,0,0,.22);
-      border:1px solid rgba(255,255,255,.08);
+      background: rgba(122,162,255,.16);
+      color:var(--text);
+      border:1px solid rgba(122,162,255,.35);
       border-radius:12px;
-      line-height:1.5;
-      font-size:13px;
-      color:var(--muted);
-      white-space:pre-wrap;
+      padding:10px 12px;
+      font-weight:700;
+      cursor:pointer;
+      transition:.12s ease;
     }
-    .kv{ display:grid; grid-template-columns: 1fr auto; gap:8px; align-items:center; }
-    .kv .v{ font-variant-numeric: tabular-nums; color:var(--text); }
+    button:hover{ transform: translateY(-1px); background: rgba(122,162,255,.22); }
+    button:active{ transform: translateY(0px); }
+    button.secondary{
+      background: rgba(255,255,255,.06);
+      border-color: rgba(255,255,255,.14);
+    }
+    .toggle{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:10px 12px;
+      border-radius:12px;
+      background: rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.12);
+      margin-bottom:10px;
+    }
+    input[type="checkbox"]{ width:18px; height:18px; }
+    .stat{
+      background: rgba(0,0,0,.18);
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:14px;
+      padding:10px 12px;
+      margin-top:10px;
+      line-height:1.55;
+      font-size:13px;
+      color: rgba(232,238,252,.88);
+    }
+    .k{
+      color: rgba(232,238,252,.62);
+      font-weight:700;
+      font-size:12px;
+    }
+    .v{
+      font-weight:800;
+      font-size:14px;
+      margin-left:6px;
+    }
+    .mono{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    .note{
+      margin-top:10px;
+      color: rgba(232,238,252,.62);
+      font-size:12px;
+      line-height:1.5;
+    }
+    .legend{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-top:8px;
+      font-size:12px;
+      color: rgba(232,238,252,.70);
+    }
     .pill{
       padding:4px 8px;
       border-radius:999px;
-      background:rgba(255,255,255,.06);
-      border:1px solid rgba(255,255,255,.08);
-      color:var(--muted);
-      font-size:12px;
+      background: rgba(0,0,0,.18);
+      border:1px solid rgba(255,255,255,.10);
     }
-    .boardArea{ display:flex; justify-content:center; align-items:flex-start; }
-    .board{
-      width:min(640px, 92vw);
-      aspect-ratio:1 / 1;
-      background:linear-gradient(180deg, rgba(0,0,0,.20), rgba(0,0,0,.35)), var(--cell);
-      border: 2px solid rgba(255,255,255,.10);
-      border-radius:16px;
-      display:grid;
-      grid-template-columns: repeat(8, 1fr);
-      gap:2px;
-      padding:10px;
-      box-shadow: 0 18px 50px rgba(0,0,0,.35);
-    }
-    .sq{
-      position:relative;
-      background: rgba(255,255,255,.03);
-      border: 1px solid rgba(0,0,0,.12);
-      border-radius:10px;
-      overflow:hidden;
-      cursor:pointer;
-      display:flex; align-items:center; justify-content:center;
-      transition:.12s background;
-    }
-    .sq:hover{ background: rgba(255,255,255,.06); }
-    .sq.disabled{ cursor:not-allowed; opacity:.78; }
-    .disc{
-      width:76%; height:76%;
-      border-radius:999px;
-      box-shadow: inset 0 10px 16px rgba(255,255,255,.16),
-                  inset 0 -14px 20px rgba(0,0,0,.25),
-                  0 12px 18px rgba(0,0,0,.35);
-      transform: scale(.98);
-    }
-    .disc.black{ background: radial-gradient(circle at 30% 20%, #3b4258 0%, var(--discB) 55%); }
-    .disc.white{ background: radial-gradient(circle at 30% 20%, #ffffff 0%, var(--discW) 55%); }
-    .hint{
-      position:absolute; inset:0;
-      border:2px dashed rgba(255,255,255,.18);
-      border-radius:10px;
-      background: var(--hint);
-      opacity:0;
-      transition:.12s opacity;
-      pointer-events:none;
-    }
-    .sq.canMove .hint{ opacity:1; }
-    .bestBadge{
-      position:absolute; right:6px; top:6px;
-      font-size:11px;
-      padding:4px 6px;
-      border-radius:999px;
-      background: rgba(54,211,153,.16);
-      border:1px solid rgba(54,211,153,.35);
-      color:#c7ffe8;
-      display:none;
-      pointer-events:none;
-    }
-    .sq.bestMove .bestBadge{ display:block; }
-    .footerNote{ margin-top:10px; color:var(--muted); font-size:12px; line-height:1.6; }
-    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Noto Sans Mono", monospace; }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <h1>8×8 オセロ：師匠AI（強AI＋終盤厳密）</h1>
+<header>
+  <h1>オセロ：各マスの評価値を常時表示（手の評価つき）</h1>
+  <div class="sub">
+    空マスは「位置の基本評価」を表示。合法手のマスは「その手を打った場合の評価」を表示します（基本 + 返せる枚数 + 相手の合法手を減らす効果）。<br/>
+    ※評価は“強さの目安”のヒューリスティックです（完全読みではありません）。
+  </div>
+</header>
 
-      <div class="row" style="margin-bottom:10px">
-        <div>
-          <label>あなたの手番</label><br>
-          <select id="playerSide">
-            <option value="B">先手（黒）</option>
-            <option value="W">後手（白）</option>
-          </select>
-        </div>
-
-        <div>
-          <label>難しさ（探索）</label><br>
-          <select id="strength">
-            <option value="3">ふつう（深さ3）</option>
-            <option value="4" selected>強い（深さ4）</option>
-            <option value="5">かなり強い（深さ5）</option>
-          </select>
-        </div>
-
-        <div>
-          <label>終盤の厳密探索</label><br>
-          <select id="exactEndgame">
-            <option value="10">残り10マス以下で厳密</option>
-            <option value="12" selected>残り12マス以下で厳密</option>
-            <option value="14">残り14マス以下で厳密</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="row" style="margin-bottom:10px">
-        <button class="primary" id="newGameBtn">新規ゲーム</button>
-        <button class="ghost" id="hintBtn">最善手ヒント表示</button>
-        <button class="danger" id="undoBtn">1手戻す</button>
-      </div>
-
-      <div class="kv" style="margin: 8px 0 6px;">
-        <div class="pill">黒</div><div class="v mono" id="countB">2</div>
-        <div class="pill">白</div><div class="v mono" id="countW">2</div>
-        <div class="pill">手番</div><div class="v mono" id="turnText">黒</div>
-      </div>
-
-      <div class="status" id="status"></div>
-
-      <div class="footerNote">
-        ・「あなたが最善手以外」を検出する基準は、このAIが計算した“最善手集合”です（序中盤は近似の可能性あり）。<br>
-        ・終盤は残りマスしきい値以下で、最後まで読み切って厳密最善に切り替えます。<br>
-      </div>
-    </div>
-
-    <div class="boardArea">
-      <div class="board" id="board"></div>
+<div class="wrap">
+  <div class="card boardWrap">
+    <div id="board" class="board" aria-label="othello board"></div>
+    <div class="legend">
+      <span class="pill">右下の数値：評価</span>
+      <span class="pill">白い点：合法手</span>
+      <span class="pill">ピンク枠：ベスト手</span>
     </div>
   </div>
 
+  <div class="card side">
+    <div class="row">
+      <button id="newBtn">新規ゲーム</button>
+      <button id="undoBtn" class="secondary">Undo</button>
+    </div>
+
+    <div class="toggle">
+      <input id="showMoveEval" type="checkbox" checked />
+      <label for="showMoveEval"><b>合法手は「手の評価」を表示</b></label>
+    </div>
+
+    <div class="toggle">
+      <input id="showBest" type="checkbox" checked />
+      <label for="showBest"><b>ベスト手をハイライト</b></label>
+    </div>
+
+    <div class="toggle">
+      <input id="showLegalDot" type="checkbox" checked />
+      <label for="showLegalDot"><b>合法手の点表示</b></label>
+    </div>
+
+    <div class="stat">
+      <div><span class="k">手番</span><span class="v" id="turnTxt"></span></div>
+      <div><span class="k">黒</span><span class="v mono" id="blackCnt"></span></div>
+      <div><span class="k">白</span><span class="v mono" id="whiteCnt"></span></div>
+      <div><span class="k">合法手数</span><span class="v mono" id="legalCnt"></span></div>
+      <div><span class="k">ベスト手評価</span><span class="v mono" id="bestVal"></span></div>
+    </div>
+
+    <div class="note">
+      クリックで着手。合法手が無い場合は自動でパスします（両者無手で終了）。
+    </div>
+  </div>
+</div>
+
 <script>
 (() => {
-  // ====== 基本定義 ======
+  // 盤面表現: 0=空, 1=黒, -1=白
+  const N = 8;
   const EMPTY = 0, BLACK = 1, WHITE = -1;
-  const sideChar = (s) => s === BLACK ? "黒" : "白";
-  const opp = (s) => -s;
 
-  // 8方向
-  const DIRS = [
+  // 位置の重み（典型的なヒューリスティック）
+  // 角を高く、角隣を低く、辺をやや高く、中央は普通
+  const W = [
+    [120, -20,  20,   5,   5,  20, -20, 120],
+    [-20, -40,  -5,  -5,  -5,  -5, -40, -20],
+    [ 20,  -5,  15,   3,   3,  15,  -5,  20],
+    [  5,  -5,   3,   3,   3,   3,  -5,   5],
+    [  5,  -5,   3,   3,   3,   3,  -5,   5],
+    [ 20,  -5,  15,   3,   3,  15,  -5,  20],
+    [-20, -40,  -5,  -5,  -5,  -5, -40, -20],
+    [120, -20,  20,   5,   5,  20, -20, 120],
+  ];
+
+  // 評価の係数（分かりやすさ優先でシンプル）
+  const COEF_FLIP = 2.0;      // 返せる枚数の価値
+  const COEF_MOB_CUT = 3.0;   // 相手合法手の減少の価値（減るほど良い）
+  const COEF_BASE = 1.0;      // 位置の重み
+
+  const dirs = [
     [-1,-1],[-1,0],[-1,1],
-    [0,-1],        [0,1],
-    [1,-1],[1,0],[1,1]
+    [ 0,-1],       [ 0,1],
+    [ 1,-1],[ 1,0],[ 1,1],
   ];
 
-  // 角・辺の重み（評価で使用）
-  const POS_W = [
-    [120,-20, 20,  5,  5, 20,-20,120],
-    [-20,-40, -5, -5, -5, -5,-40,-20],
-    [ 20, -5, 15,  3,  3, 15, -5, 20],
-    [  5, -5,  3,  3,  3,  3, -5,  5],
-    [  5, -5,  3,  3,  3,  3, -5,  5],
-    [ 20, -5, 15,  3,  3, 15, -5, 20],
-    [-20,-40, -5, -5, -5, -5,-40,-20],
-    [120,-20, 20,  5,  5, 20,-20,120]
-  ];
-
-  // ====== UI要素 ======
-  const $board = document.getElementById("board");
-  const $status = document.getElementById("status");
-  const $countB = document.getElementById("countB");
-  const $countW = document.getElementById("countW");
-  const $turnText = document.getElementById("turnText");
-  const $playerSide = document.getElementById("playerSide");
-  const $strength = document.getElementById("strength");
-  const $exactEndgame = document.getElementById("exactEndgame");
-  const $newGameBtn = document.getElementById("newGameBtn");
-  const $hintBtn = document.getElementById("hintBtn");
-  const $undoBtn = document.getElementById("undoBtn");
-
-  // ====== 効果音（ブー） ======
-  function boo(){
-    try{
-      const ac = new (window.AudioContext || window.webkitAudioContext)();
-      const o = ac.createOscillator();
-      const g = ac.createGain();
-      o.type = "sawtooth";
-      o.frequency.value = 140;
-      g.gain.setValueAtTime(0.0001, ac.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.22, ac.currentTime + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.28);
-      o.connect(g).connect(ac.destination);
-      o.start();
-      o.stop(ac.currentTime + 0.30);
-      setTimeout(()=>ac.close(), 450);
-    }catch(e){
-      // だめでも無視
-    }
-  }
-
-  // ====== ゲーム状態 ======
+  // State
   let board = makeInitialBoard();
   let turn = BLACK;
-  let player = BLACK; // 後で選択
-  let showHint = false;
-  let history = []; // undo用
-  let lock = false; // AI思考中ロック
+  let history = [];
+  let bestMoveCache = null;
 
-  // ====== 盤面操作 ======
+  const elBoard = document.getElementById('board');
+  const turnTxt = document.getElementById('turnTxt');
+  const blackCnt = document.getElementById('blackCnt');
+  const whiteCnt = document.getElementById('whiteCnt');
+  const legalCnt = document.getElementById('legalCnt');
+  const bestVal = document.getElementById('bestVal');
+
+  const showMoveEval = document.getElementById('showMoveEval');
+  const showBest = document.getElementById('showBest');
+  const showLegalDot = document.getElementById('showLegalDot');
+
+  document.getElementById('newBtn').addEventListener('click', () => {
+    board = makeInitialBoard();
+    turn = BLACK;
+    history = [];
+    bestMoveCache = null;
+    render();
+  });
+  document.getElementById('undoBtn').addEventListener('click', () => {
+    const prev = history.pop();
+    if (!prev) return;
+    board = prev.board;
+    turn = prev.turn;
+    bestMoveCache = null;
+    render();
+  });
+
+  showMoveEval.addEventListener('change', render);
+  showBest.addEventListener('change', render);
+  showLegalDot.addEventListener('change', render);
+
   function makeInitialBoard(){
-    const b = Array.from({length:8}, ()=>Array(8).fill(EMPTY));
-    b[3][3] = WHITE; b[3][4] = BLACK;
-    b[4][3] = BLACK; b[4][4] = WHITE;
+    const b = Array.from({length:N}, () => Array(N).fill(EMPTY));
+    b[3][3] = WHITE;
+    b[3][4] = BLACK;
+    b[4][3] = BLACK;
+    b[4][4] = WHITE;
     return b;
   }
 
-  function inBounds(r,c){ return r>=0 && r<8 && c>=0 && c<8; }
+  function inBounds(r,c){ return r>=0 && r<N && c>=0 && c<N; }
 
-  function getFlips(b, side, r, c){
-    if(b[r][c] !== EMPTY) return [];
+  function cloneBoard(b){ return b.map(row => row.slice()); }
+
+  function getFlips(b, r, c, player){
+    if (b[r][c] !== EMPTY) return [];
+    const opp = -player;
     let flips = [];
-    for(const [dr,dc] of DIRS){
-      let rr=r+dr, cc=c+dc;
+    for (const [dr,dc] of dirs){
+      let rr = r+dr, cc = c+dc;
       let line = [];
-      while(inBounds(rr,cc) && b[rr][cc] === opp(side)){
+      while (inBounds(rr,cc) && b[rr][cc] === opp){
         line.push([rr,cc]);
-        rr+=dr; cc+=dc;
+        rr += dr; cc += dc;
       }
-      if(line.length && inBounds(rr,cc) && b[rr][cc] === side){
-        flips.push(...line);
+      if (line.length > 0 && inBounds(rr,cc) && b[rr][cc] === player){
+        flips = flips.concat(line);
       }
     }
     return flips;
   }
 
-  function legalMoves(b, side){
-    const mv = [];
-    for(let r=0;r<8;r++){
-      for(let c=0;c<8;c++){
-        const flips = getFlips(b,side,r,c);
-        if(flips.length) mv.push({r,c,flips});
+  function listLegalMoves(b, player){
+    const moves = [];
+    for (let r=0; r<N; r++){
+      for (let c=0; c<N; c++){
+        const flips = getFlips(b,r,c,player);
+        if (flips.length) moves.push({r,c,flips});
       }
     }
-    return mv;
+    return moves;
   }
 
-  function applyMove(b, side, move){
-    const nb = b.map(row => row.slice());
-    nb[move.r][move.c] = side;
-    for(const [rr,cc] of move.flips) nb[rr][cc] = side;
+  function applyMove(b, move, player){
+    const nb = cloneBoard(b);
+    nb[move.r][move.c] = player;
+    for (const [rr,cc] of move.flips){
+      nb[rr][cc] = player;
+    }
     return nb;
   }
 
-  function countPieces(b){
-    let B=0,W=0,E=0;
-    for(let r=0;r<8;r++){
-      for(let c=0;c<8;c++){
-        if(b[r][c]===BLACK) B++;
-        else if(b[r][c]===WHITE) W++;
-        else E++;
+  function countDiscs(b){
+    let black=0, white=0;
+    for (let r=0; r<N; r++){
+      for (let c=0; c<N; c++){
+        if (b[r][c] === BLACK) black++;
+        if (b[r][c] === WHITE) white++;
       }
     }
-    return {B,W,E};
+    return {black, white};
   }
 
-  function gameOver(b){
-    return legalMoves(b,BLACK).length===0 && legalMoves(b,WHITE).length===0;
-  }
-
-  // ====== 評価関数（強め） ======
-  function evaluate(b, side){
-    // side視点でスコア（大きいほど良い）
-    const {B,W,E} = countPieces(b);
-    const my = (side===BLACK)?B:W;
-    const op = (side===BLACK)?W:B;
-
-    // 終局は石差を最大化
-    if(E===0 || gameOver(b)){
-      return 100000 * (my - op);
-    }
-
-    // 位置価値
-    let pos = 0;
-    for(let r=0;r<8;r++){
-      for(let c=0;c<8;c++){
-        if(b[r][c]===side) pos += POS_W[r][c];
-        else if(b[r][c]===opp(side)) pos -= POS_W[r][c];
+  // 基本評価（位置の重みの合計を「手番目線」で返す）
+  // ここでは「player にとって良いほど +」にする
+  function baseBoardEval(b, player){
+    let sum = 0;
+    for (let r=0; r<N; r++){
+      for (let c=0; c<N; c++){
+        if (b[r][c] === EMPTY) continue;
+        sum += W[r][c] * (b[r][c] === player ? 1 : -1);
       }
     }
-
-    // 可動性（手数）
-    const mMy = legalMoves(b,side).length;
-    const mOp = legalMoves(b,opp(side)).length;
-    const mob = (mMy - mOp) * 12;
-
-    // 確定角
-    const corners = [[0,0],[0,7],[7,0],[7,7]];
-    let cScore = 0;
-    for(const [r,c] of corners){
-      if(b[r][c]===side) cScore += 60;
-      else if(b[r][c]===opp(side)) cScore -= 60;
-    }
-
-    // 石差は中盤は控えめ
-    const disc = (my - op) * 2;
-
-    // パリティ（終盤寄りで少し効かせる）
-    const parity = (E % 2 === 0 ? 1 : -1) * 6;
-
-    return pos + mob + cScore + disc + parity;
+    return sum;
   }
 
-  // ====== 探索（αβ） ======
-  function minimax(b, sideToMove, rootSide, depth, alpha, beta){
-    const moves = legalMoves(b, sideToMove);
-    const {E} = countPieces(b);
+  // 「その手を打った場合」の手の評価（分かりやすいヒューリスティック）
+  //  - 着手点の位置の重み
+  //  - 返せる枚数
+  //  - 相手の合法手数を減らす（＝相手モビリティを削る）
+  function moveEval(b, move, player){
+    const after = applyMove(b, move, player);
 
-    // 終盤は読み切り（depth無視で最後まで）
-    const exactThreshold = parseInt($exactEndgame.value, 10);
-    const doExact = E <= exactThreshold;
+    const pos = W[move.r][move.c] * COEF_BASE;
+    const flips = move.flips.length * COEF_FLIP;
 
-    if(gameOver(b)){
-      const {B,W} = countPieces(b);
-      const diff = (rootSide===BLACK)? (B-W) : (W-B);
-      return {score: 100000 * diff, pv: []};
-    }
+    const opp = -player;
+    const oppMovesBefore = listLegalMoves(b, opp).length;
+    const oppMovesAfter  = listLegalMoves(after, opp).length;
+    const mobilityCut = (oppMovesBefore - oppMovesAfter) * COEF_MOB_CUT;
 
-    if(depth === 0 && !doExact){
-      return {score: evaluate(b, rootSide), pv: []};
-    }
+    // おまけで盤面の位置評価も少し混ぜる（打った結果の安定度）
+    const boardPosDelta = (baseBoardEval(after, player) - baseBoardEval(b, player)) * 0.05;
 
-    // パス
-    if(moves.length === 0){
-      const res = minimax(b, opp(sideToMove), rootSide, doExact ? depth : depth-1, alpha, beta);
-      return {score: res.score, pv: [{pass:true}, ...res.pv]};
-    }
+    return Math.round((pos + flips + mobilityCut + boardPosDelta) * 10) / 10;
+  }
 
-    // 並び替え（枝刈り強化）
-    moves.sort((a,bm)=>{
-      // 角優先、次に評価
-      const aCorner = (a.r===0||a.r===7) && (a.c===0||a.c===7);
-      const bCorner = (bm.r===0||bm.r===7) && (bm.c===0||bm.c===7);
-      if(aCorner && !bCorner) return -1;
-      if(!aCorner && bCorner) return 1;
-      // ざっくり位置重み
-      const wa = POS_W[a.r][a.c];
-      const wb = POS_W[bm.r][bm.c];
-      return wb - wa;
-    });
-
+  function computeBestMove(b, player){
+    const moves = listLegalMoves(b, player);
+    if (!moves.length) return null;
     let best = null;
-
-    const maximizing = (sideToMove === rootSide);
-    if(maximizing){
-      let bestScore = -Infinity;
-      for(const mv of moves){
-        const nb = applyMove(b, sideToMove, mv);
-        const child = minimax(nb, opp(sideToMove), rootSide, doExact ? depth : depth-1, alpha, beta);
-        const sc = child.score;
-        if(sc > bestScore){
-          bestScore = sc;
-          best = {score: sc, pv: [mv, ...child.pv]};
-        }
-        alpha = Math.max(alpha, bestScore);
-        if(beta <= alpha) break;
-      }
-      return best;
-    }else{
-      let bestScore = Infinity;
-      for(const mv of moves){
-        const nb = applyMove(b, sideToMove, mv);
-        const child = minimax(nb, opp(sideToMove), rootSide, doExact ? depth : depth-1, alpha, beta);
-        const sc = child.score;
-        if(sc < bestScore){
-          bestScore = sc;
-          best = {score: sc, pv: [mv, ...child.pv]};
-        }
-        beta = Math.min(beta, bestScore);
-        if(beta <= alpha) break;
-      }
-      return best;
+    for (const m of moves){
+      const v = moveEval(b, m, player);
+      if (!best || v > best.v) best = { ...m, v };
     }
+    return best;
   }
 
-  // 「最善手集合」を作る（同点は複数採用）
-  function bestMoveSet(b, side, depth){
-    const moves = legalMoves(b, side);
-    if(moves.length === 0) return {bestMoves: [], bestScore: null}; // パス
-
-    let bestScore = -Infinity;
-    let best = [];
-    for(const mv of moves){
-      const nb = applyMove(b, side, mv);
-      const res = minimax(nb, opp(side), side, depth-1, -Infinity, Infinity);
-      const sc = res.score;
-      if(sc > bestScore){
-        bestScore = sc;
-        best = [mv];
-      }else if(sc === bestScore){
-        best.push(mv);
-      }
+  function tryAutoPass(){
+    const moves = listLegalMoves(board, turn);
+    if (moves.length) return false;
+    // パス
+    const oppMoves = listLegalMoves(board, -turn);
+    if (!oppMoves.length){
+      // 終了
+      return true;
     }
-    return {bestMoves: best, bestScore};
+    turn = -turn;
+    return false;
   }
 
-  function pickRandom(arr){
-    return arr[Math.floor(Math.random()*arr.length)];
+  function onCellClick(r,c){
+    const moves = listLegalMoves(board, turn);
+    const move = moves.find(m => m.r===r && m.c===c);
+    if (!move) return;
+
+    history.push({ board: cloneBoard(board), turn });
+    board = applyMove(board, move, turn);
+    turn = -turn;
+    bestMoveCache = null;
+
+    // 自動パス処理（連続パスもケア）
+    let ended = false;
+    for (let i=0; i<2; i++){
+      const endNow = tryAutoPass();
+      if (endNow){ ended = true; break; }
+    }
+    render(ended);
   }
 
-  // ====== UI描画 ======
-  function render(){
-    $board.innerHTML = "";
-    const movesNow = legalMoves(board, turn);
-    const bestForPlayer = (turn===player) ? bestMoveSet(board, turn, parseInt($strength.value,10)) : null;
-    const bestCoords = new Set((bestForPlayer?.bestMoves || []).map(m => `${m.r},${m.c}`));
+  function render(ended=false){
+    // Best move cache
+    const legal = listLegalMoves(board, turn);
+    bestMoveCache = (showBest.checked ? computeBestMove(board, turn) : null);
 
-    for(let r=0;r<8;r++){
-      for(let c=0;c<8;c++){
-        const sq = document.createElement("div");
-        sq.className = "sq";
+    // Stats
+    const cnt = countDiscs(board);
+    const turnName = (turn === BLACK) ? '黒' : '白';
+    turnTxt.textContent = ended ? '終了' : turnName;
+    blackCnt.textContent = cnt.black;
+    whiteCnt.textContent = cnt.white;
+    legalCnt.textContent = legal.length;
+    bestVal.textContent = bestMoveCache ? bestMoveCache.v : (legal.length ? '—' : '（パス）');
+
+    // Draw board
+    elBoard.innerHTML = '';
+    for (let r=0; r<N; r++){
+      for (let c=0; c<N; c++){
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+
+        // Click
+        cell.addEventListener('click', () => onCellClick(r,c));
+
         const v = board[r][c];
 
-        if(v===BLACK || v===WHITE){
-          const disc = document.createElement("div");
-          disc.className = "disc " + (v===BLACK ? "black" : "white");
-          sq.appendChild(disc);
-        }else{
-          const can = movesNow.some(m=>m.r===r && m.c===c);
-          if(can){
-            sq.classList.add("canMove");
-            const hint = document.createElement("div");
-            hint.className = "hint";
-            sq.appendChild(hint);
+        // Disc
+        if (v !== EMPTY){
+          const disc = document.createElement('div');
+          disc.className = 'disc ' + (v===BLACK ? 'black' : 'white');
+          cell.appendChild(disc);
+
+          const badge = document.createElement('div');
+          badge.className = 'badge';
+          badge.textContent = (v===BLACK ? 'B' : 'W');
+          cell.appendChild(badge);
+        }
+
+        // Evaluation display
+        const evalEl = document.createElement('div');
+        evalEl.className = 'eval';
+
+        // Determine what to show
+        let textVal = null;
+        let isLegal = false;
+
+        const legalMove = legal.find(m => m.r===r && m.c===c);
+
+        if (v === EMPTY){
+          // empty
+          if (showMoveEval.checked && legalMove){
+            isLegal = true;
+            textVal = moveEval(board, legalMove, turn);
+          }else{
+            textVal = W[r][c];
+            evalEl.classList.add('muted');
           }
+        } else {
+          // occupied: show its positional weight (muted) so "always"
+          textVal = W[r][c];
+          evalEl.classList.add('muted');
         }
 
-        const badge = document.createElement("div");
-        badge.className = "bestBadge";
-        badge.textContent = "最善";
-        sq.appendChild(badge);
+        evalEl.textContent = (textVal>=0 ? `+${textVal}` : `${textVal}`);
+        cell.appendChild(evalEl);
 
-        if(showHint && turn===player && bestCoords.has(`${r},${c}`)){
-          sq.classList.add("bestMove");
+        // Legal dot
+        if (v===EMPTY && legalMove && showLegalDot.checked){
+          const dot = document.createElement('div');
+          dot.className = 'legalDot';
+          cell.appendChild(dot);
         }
 
-        if(lock) sq.classList.add("disabled");
+        // Best highlight
+        if (bestMoveCache && v===EMPTY && bestMoveCache.r===r && bestMoveCache.c===c){
+          cell.classList.add('best');
+        }
 
-        sq.addEventListener("click", () => onClickCell(r,c));
-        $board.appendChild(sq);
+        elBoard.appendChild(cell);
       }
     }
-
-    const {B,W} = countPieces(board);
-    $countB.textContent = String(B);
-    $countW.textContent = String(W);
-    $turnText.textContent = sideChar(turn);
-
-    const movesB = legalMoves(board, BLACK).length;
-    const movesW = legalMoves(board, WHITE).length;
-
-    let msg = "";
-    msg += `あなた：${sideChar(player)} / AI：${sideChar(opp(player))}\n`;
-    msg += `黒の合法手：${movesB}　白の合法手：${movesW}\n`;
-
-    if(gameOver(board)){
-      const diff = B-W;
-      if(diff===0) msg += `ゲーム終了：引き分け（黒${B} - 白${W}）`;
-      else if(diff>0) msg += `ゲーム終了：黒の勝ち（黒${B} - 白${W}）`;
-      else msg += `ゲーム終了：白の勝ち（黒${B} - 白${W}）`;
-    }else{
-      const lm = legalMoves(board, turn);
-      if(lm.length===0) msg += `パスです：${sideChar(turn)}は打てる場所がありません。`;
-      else msg += `手番：${sideChar(turn)}（打てる場所 ${lm.length}）`;
-    }
-
-    $status.textContent = msg;
   }
 
-  // ====== クリック処理 ======
-  function onClickCell(r,c){
-    if(lock) return;
-    if(gameOver(board)) return;
-
-    // 人間の手番でないなら無視
-    if(turn !== player) return;
-
-    const moves = legalMoves(board, turn);
-    const mv = moves.find(m => m.r===r && m.c===c);
-    if(!mv) return;
-
-    // 「師匠判定」：最善手集合に含まれるか
-    const depth = parseInt($strength.value, 10);
-    const {bestMoves} = bestMoveSet(board, turn, depth);
-    const ok = bestMoves.some(m => m.r===r && m.c===c);
-
-    if(!ok){
-      boo();
-      // 打ち直し：反映しない
-      return;
-    }
-
-    pushHistory();
-    board = applyMove(board, turn, mv);
-    turn = opp(turn);
-
-    // 次がAIならAI手
-    tick();
-    render();
-  }
-
-  function pushHistory(){
-    history.push({
-      board: board.map(row=>row.slice()),
-      turn,
-      player
-    });
-    if(history.length > 200) history.shift();
-  }
-
-  function undo(){
-    if(lock) return;
-    const st = history.pop();
-    if(!st) return;
-    board = st.board.map(row=>row.slice());
-    turn = st.turn;
-    player = st.player;
-    render();
-  }
-
-  // ====== 進行（パス処理＋AI） ======
-  async function tick(){
-    if(gameOver(board)) return;
-
-    // パスなら自動で手番移動
-    const lm = legalMoves(board, turn);
-    if(lm.length===0){
-      turn = opp(turn);
-      render();
-      // 連続パスの可能性
-      const lm2 = legalMoves(board, turn);
-      if(lm2.length===0){
-        render();
-        return;
-      }
-    }
-
-    // AIの手番なら打つ
-    if(turn !== player){
-      lock = true;
-      render();
-
-      // 少し待って「考えてる感」
-      await new Promise(res=>setTimeout(res, 120));
-
-      const depth = parseInt($strength.value, 10);
-
-      // AI最善手集合（同点ランダム）
-      const {bestMoves} = bestMoveSet(board, turn, depth);
-
-      // パス
-      if(bestMoves.length===0){
-        turn = opp(turn);
-        lock = false;
-        render();
-        return;
-      }
-
-      const choice = pickRandom(bestMoves);
-      pushHistory();
-      board = applyMove(board, turn, choice);
-      turn = opp(turn);
-      lock = false;
-
-      // パスが必要なら続ける
-      const lmAfter = legalMoves(board, turn);
-      if(lmAfter.length===0 && !gameOver(board)){
-        await new Promise(res=>setTimeout(res, 80));
-        await tick();
-      }
-      render();
-    }
-  }
-
-  // ====== ボタン類 ======
-  function newGame(){
-    history = [];
-    board = makeInitialBoard();
-    turn = BLACK;
-    player = ($playerSide.value === "B") ? BLACK : WHITE;
-    showHint = false;
-
-    // 先にAIが打つケース
-    render();
-    tick();
-  }
-
-  $newGameBtn.addEventListener("click", newGame);
-  $hintBtn.addEventListener("click", () => {
-    showHint = !showHint;
-    $hintBtn.textContent = showHint ? "ヒント非表示" : "最善手ヒント表示";
-    render();
-  });
-  $undoBtn.addEventListener("click", () => undo());
-
-  $playerSide.addEventListener("change", () => newGame());
-  $strength.addEventListener("change", () => render());
-  $exactEndgame.addEventListener("change", () => render());
-
-  // 初期描画
+  // 初回レンダ & 自動パス
+  tryAutoPass();
   render();
-  newGame();
 })();
 </script>
 </body>
