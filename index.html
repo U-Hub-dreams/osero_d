@@ -310,7 +310,6 @@
 
 <script>
 (() => {
-  // ====== 基本定数 ======
   const N = 8;
   const EMPTY = 0, BLACK = 1, WHITE = -1;
   const INF = 1e15;
@@ -321,7 +320,6 @@
     [ 1,-1],[ 1,0],[ 1,1],
   ];
 
-  // 位置重み（強めの形）
   const PST = [
     [120,-20, 20,  5,  5, 20,-20,120],
     [-20,-60, -5, -5, -5, -5,-60,-20],
@@ -334,10 +332,9 @@
   ];
 
   const CORNERS = [[0,0],[0,7],[7,0],[7,7]];
-  const X_SQ = [[1,1],[1,6],[6,1],[6,6]]; // 角斜め（X）
-  const C_SQ = [[0,1],[1,0],[0,6],[1,7],[6,0],[7,1],[6,7],[7,6]]; // 角隣接（C）
+  const X_SQ = [[1,1],[1,6],[6,1],[6,6]];
+  const C_SQ = [[0,1],[1,0],[0,6],[1,7],[6,0],[7,1],[6,7],[7,6]];
 
-  // ====== UI ======
   const gridEl = document.getElementById("grid");
   const turnLabel = document.getElementById("turnLabel");
   const blackCountEl = document.getElementById("blackCount");
@@ -355,35 +352,25 @@
   const resetBtn = document.getElementById("resetBtn");
   const passBtn = document.getElementById("passBtn");
 
-  // ====== 状態 ======
   let board = makeEmptyBoard();
   let turn = BLACK;
   let history = [];
 
-  // TT（置換表）
-  // key: hash (string) -> { depth, flag, value, bestMoveKey }
-  // flag: 0 exact, 1 lowerbound, 2 upperbound
   const TT = new Map();
 
-  // Zobrist
   const Z = initZobrist();
   let hash = 0n;
 
-  // 反復深化の管理
   let thinking = false;
 
-  // ====== 初期化 ======
   initBoard(board);
   hash = computeHash(board);
   buildGrid();
   render();
   maybeAutoAIMove();
 
-  // ====== イベント ======
   showEvalEl.addEventListener("change", render);
   aiSideEl.addEventListener("change", () => { render(); maybeAutoAIMove(); });
-  thinkMsEl.addEventListener("change", () => { /* noop */ });
-  maxDepthEl.addEventListener("change", () => { /* noop */ });
 
   aiMoveBtn.addEventListener("click", async () => {
     if (thinking) return;
@@ -420,11 +407,11 @@
     }
     pushHistory();
     turn = -turn;
+    hash = hashToggleSide(hash);
     render();
     maybeAutoAIMove();
   });
 
-  // ====== 盤面 ======
   function makeEmptyBoard(){
     return Array.from({length:N}, () => Array(N).fill(EMPTY));
   }
@@ -464,26 +451,6 @@
     return res;
   }
 
-  function applyMoveInPlace(b, move, player){
-    // in-place + hash 更新用に返り値として変更箇所を返す
-    const changed = [];
-    b[move.r][move.c] = player;
-    changed.push([move.r, move.c, EMPTY, player]);
-    for (const [rr,cc] of move.flips){
-      const prev = b[rr][cc];
-      b[rr][cc] = player;
-      changed.push([rr, cc, prev, player]);
-    }
-    return changed;
-  }
-
-  function undoMoveInPlace(b, changed){
-    for (let i=changed.length-1;i>=0;i--){
-      const [r,c,prev,_now] = changed[i];
-      b[r][c] = prev;
-    }
-  }
-
   function countDiscs(b){
     let black=0, white=0, empty=0;
     for (let r=0;r<N;r++){
@@ -496,9 +463,7 @@
     return {black,white,empty};
   }
 
-  // ====== Zobrist ======
   function initZobrist(){
-    // [r][c][pieceIndex] pieceIndex: 0 black, 1 white
     const z = Array.from({length:N}, () =>
       Array.from({length:N}, () => [rand64(), rand64()])
     );
@@ -506,7 +471,6 @@
     return {z, side};
   }
   function rand64(){
-    // BigInt 64bit 擬似乱数（ブラウザ標準の crypto を使用）
     const u = new Uint32Array(2);
     crypto.getRandomValues(u);
     return (BigInt(u[0]) << 32n) ^ BigInt(u[1]);
@@ -532,23 +496,19 @@
   function moveKey(m){ return (m.r<<3) | m.c; }
   function keyToRC(k){ return {r:(k>>3)&7, c:k&7}; }
 
-  // ====== 評価関数（強め・フェーズ依存） ======
-  // スコアは「player視点で大きいほど良い」
   function evaluate(b, player){
-    const {black, white, empty} = countDiscs(b);
+    const {black, white} = countDiscs(b);
     const discs = black + white;
-    const phase = discs / 64; // 0->1
+    const phase = discs / 64;
 
-    // フェーズで重みを変える（序盤:モビリティ/危険回避、中盤:形、終盤:石差）
     const wMob = lerp(18, 6, phase);
     const wPos = lerp(10, 16, phase);
-    const wDisc = lerp(1, 28, phase);      // 終盤ほど石差を強く
-    const wFrontier = lerp(10, 4, phase);  // 序盤ほどフロンティア（外周石）を嫌う
+    const wDisc = lerp(1, 28, phase);
+    const wFrontier = lerp(10, 4, phase);
     const wCorner = 60;
-    const wParity = lerp(0, 8, phase);     // 終盤寄りで効かせる
-    const wStab = lerp(0, 10, phase);      // 簡易安定度
+    const wParity = lerp(0, 8, phase);
+    const wStab = lerp(0, 10, phase);
 
-    // 位置重み
     let pos=0;
     for (let r=0;r<N;r++){
       for (let c=0;c<N;c++){
@@ -557,23 +517,18 @@
     }
     pos *= player;
 
-    // 角
     let corner=0;
-    for (const [r,c] of CORNERS){
-      corner += b[r][c];
-    }
+    for (const [r,c] of CORNERS) corner += b[r][c];
     corner *= player;
 
-    // 危険マス（角が空のときのC/Xは致命傷になりやすい）
     let danger=0;
     for (let i=0;i<4;i++){
       const [cr,cc] = CORNERS[i];
       if (b[cr][cc] !== EMPTY) continue;
       const [xr,xc] = X_SQ[i];
-      danger -= 3 * b[xr][xc]; // Xは特に危険
+      danger -= 3 * b[xr][xc];
     }
     for (const [r,c] of C_SQ){
-      // Cも危険（角が空なら）
       const corner = nearestCorner(r,c);
       if (corner && b[corner.r][corner.c]===EMPTY){
         danger -= 2 * b[r][c];
@@ -581,24 +536,16 @@
     }
     danger *= player;
 
-    // モビリティ
     const myMob = getLegalMoves(b, player).length;
     const opMob = getLegalMoves(b, -player).length;
     const mob = (myMob - opMob);
 
-    // フロンティア（空きマスに隣接している石の数：少ないほど良い）
     const frontier = (frontierCount(b, player) - frontierCount(b, -player));
-
-    // 簡易安定度（端から連続して自色で埋まってる部分を安定寄りに評価）
     const stab = (stableEdgeApprox(b, player) - stableEdgeApprox(b, -player));
-
-    // パリティ（終盤：空き領域の偶奇）
     const parity = parityScore(b, player);
 
-    // 石差
     const discDiff = (black - white) * player;
 
-    // 合成
     const score =
       wPos*pos +
       wCorner*corner +
@@ -609,14 +556,12 @@
       wParity*parity +
       wDisc*discDiff;
 
-    // 返り値は探索に使いやすい大きさに丸める
     return score;
   }
 
   function lerp(a,b,t){ return a + (b-a)*t; }
 
   function nearestCorner(r,c){
-    // 角隣接(C)用の判定（簡易）
     if (r<=1 && c<=1) return {r:0,c:0};
     if (r<=1 && c>=6) return {r:0,c:7};
     if (r>=6 && c<=1) return {r:7,c:0};
@@ -642,18 +587,13 @@
   }
 
   function stableEdgeApprox(b, player){
-    // 端から角方向に連続している石を「安定っぽい」と見なす簡易近似
     let s=0;
-    // 上端
     s += stableRun(b, player, 0,0, 0,1);
     s += stableRun(b, player, 0,7, 0,-1);
-    // 下端
     s += stableRun(b, player, 7,0, 0,1);
     s += stableRun(b, player, 7,7, 0,-1);
-    // 左端
     s += stableRun(b, player, 0,0, 1,0);
     s += stableRun(b, player, 7,0, -1,0);
-    // 右端
     s += stableRun(b, player, 0,7, 1,0);
     s += stableRun(b, player, 7,7, -1,0);
     return s;
@@ -670,13 +610,10 @@
   }
 
   function parityScore(b, player){
-    // 空きマスの連結成分ごとの偶奇（終盤用の簡易パリティ）
-    // ここは軽めに：全体の空き偶奇だけでも十分効く場面がある
     const {empty} = countDiscs(b);
     return (empty % 2 === 0) ? 1 : -1;
   }
 
-  // ====== 探索（反復深化 + αβ + TT） ======
   function isGameOver(b){
     return getLegalMoves(b, BLACK).length===0 && getLegalMoves(b, WHITE).length===0;
   }
@@ -684,37 +621,31 @@
   function terminalScore(b, player){
     const {black,white} = countDiscs(b);
     const diff = (black-white)*player;
-    // 勝ち負けを強調（完全終局のときは評価より優先）
     if (diff>0) return 1e9 + diff;
     if (diff<0) return -1e9 + diff;
     return 0;
   }
 
+  function isXSquare(r,c){
+    return (r===1&&c===1)||(r===1&&c===6)||(r===6&&c===1)||(r===6&&c===6);
+  }
+  function isCSquare(r,c){
+    for (const [rr,cc] of C_SQ) if (rr===r && cc===c) return true;
+    return false;
+  }
+
   function orderMoves(b, player, moves, ttBestKey){
-    // 強い並べ替え：TTの最善→角→辺→PST高→返し枚数少→危険回避
     const scored = moves.map(m => {
       const k = moveKey(m);
       let s = 0;
       if (ttBestKey !== null && k === ttBestKey) s += 1e9;
-
-      // 角
       if ((m.r===0||m.r===7) && (m.c===0||m.c===7)) s += 5e8;
-
-      // X/C（角が空なら避けたい）
       if (isXSquare(m.r,m.c)) s -= 2e8;
       if (isCSquare(m.r,m.c)) s -= 1e8;
-
-      // 辺
       if (m.r===0||m.r===7||m.c===0||m.c===7) s += 2e7;
-
-      // 位置重み（手番視点）
       s += 1e6 * PST[m.r][m.c];
-
-      // 返す枚数は少なめが安全なことが多い（序中盤）
       s -= 2e4 * m.flips.length;
 
-      // 1手だけ浅く見る（高速）…着手後モビリティ差
-      // ただし重いのでほどほど
       const nb = cloneBoard(b);
       nb[m.r][m.c] = player;
       for (const [rr,cc] of m.flips) nb[rr][cc] = player;
@@ -727,36 +658,21 @@
     return scored.map(x=>x.m);
   }
 
-  function isXSquare(r,c){
-    return (r===1&&c===1)||(r===1&&c===6)||(r===6&&c===1)||(r===6&&c===6);
-  }
-  function isCSquare(r,c){
-    for (const [rr,cc] of C_SQ) if (rr===r && cc===c) return true;
-    return false;
-  }
-
-  function ttGet(h){
-    const k = h.toString();
-    return TT.get(k) ?? null;
-  }
+  function ttGet(h){ return TT.get(h.toString()) ?? null; }
   function ttSet(h, entry){
-    const k = h.toString();
-    // メモリ暴走防止：サイズが大きくなりすぎたら軽く掃除
     if (TT.size > 220000){
-      // ランダムに少し削る（雑だが軽い）
       let i=0;
       for (const key of TT.keys()){
         TT.delete(key);
         if (++i>70000) break;
       }
     }
-    TT.set(k, entry);
+    TT.set(h.toString(), entry);
   }
 
   function nowMs(){ return performance.now(); }
 
   async function findBestMoveRoot(b, player, timeLimitMs, maxDepth){
-    // 反復深化。時間を超えたら直前深さの最善を返す
     const start = nowMs();
     const deadline = start + timeLimitMs;
 
@@ -765,11 +681,9 @@
     let bestPV = [];
     let nodes = 0;
 
-    // ルートの合法手
     let rootMoves = getLegalMoves(b, player);
     if (rootMoves.length===0) return {bestMove:null, bestScore: -INF, depth:0, nodes:0, pv:[]};
 
-    // 初回並べ替えに TT を使う
     const tt = ttGet(hash);
     const ttBestKey = tt?.bestMoveKey ?? null;
     rootMoves = orderMoves(b, player, rootMoves, ttBestKey);
@@ -781,7 +695,6 @@
       let localBestScore = -INF;
       let localBestPV = [];
 
-      // aspiration window（軽い）
       let alpha = -INF;
       let beta  = INF;
 
@@ -789,8 +702,6 @@
         if (nowMs() > deadline) break;
 
         const changed = applyMoveAndHash(mv, player);
-        const childHashBeforeSide = hash; // applyMoveAndHashで盤面とhashが更新済
-        // 手番交代
         hash = hashToggleSide(hash);
         turn = -turn;
 
@@ -798,11 +709,9 @@
         nodes += res.nodes;
         const score = -res.value;
 
-        // 元に戻す
         turn = -turn;
         hash = hashToggleSide(hash);
         undoMoveAndHash(changed);
-        // childHashBeforeSide は不要
 
         if (score > localBestScore){
           localBestScore = score;
@@ -816,41 +725,29 @@
         bestMove = localBestMove;
         bestScore = localBestScore;
         bestPV = localBestPV;
-
-        // 次深さの並べ替え：今回のベストを先頭に（PV move ordering）
         rootMoves = orderMoves(b, player, rootMoves, moveKey(bestMove));
       }
 
-      // UIに負担かけない程度にyield
       await new Promise(r => setTimeout(r, 0));
     }
 
-    // ルートTT更新
-    ttSet(hash, {depth: 1, flag:0, value: bestScore, bestMoveKey: bestMove ? moveKey(bestMove) : null});
-
-    const depthReached = bestPV.length ? bestPV.length : 0;
-    return {bestMove, bestScore, depth: depthReached, nodes, pv: bestPV};
+    ttSet(hash, {depth: 1, flag:0, value: bestScore, bestMoveKey: bestMove ? moveKey(bestMove) : null, pv: bestPV});
+    return {bestMove, bestScore, depth: bestPV.length, nodes, pv: bestPV};
   }
 
   function alphabeta(b, player, depth, alpha, beta, deadline){
     let nodes = 1;
 
-    // タイムアウト
     if (nowMs() > deadline) {
       return {value: evaluate(b, player), nodes, pv: []};
     }
-
-    // 終局
     if (isGameOver(b)){
       return {value: terminalScore(b, player), nodes, pv: []};
     }
-
-    // 深さ0: 静的評価（簡易qsearchを入れるならここで）
     if (depth <= 0){
       return {value: evaluate(b, player), nodes, pv: []};
     }
 
-    // TT参照
     const entry = ttGet(hash);
     if (entry && entry.depth >= depth){
       if (entry.flag === 0) return {value: entry.value, nodes, pv: [ ...(entry.pv ?? []) ]};
@@ -861,18 +758,14 @@
 
     let moves = getLegalMoves(b, player);
 
-    // パス
     if (moves.length === 0){
-      // 手番交代だけして続行
       hash = hashToggleSide(hash);
       turn = -turn;
       const res = alphabeta(b, -player, depth-1, -beta, -alpha, deadline);
       const value = -res.value;
       turn = -turn;
       hash = hashToggleSide(hash);
-
-      // TT保存
-      ttSet(hash, {depth, flag:0, value, bestMoveKey: null});
+      ttSet(hash, {depth, flag:0, value, bestMoveKey: null, pv: res.pv});
       return {value, nodes: nodes + res.nodes, pv: res.pv};
     }
 
@@ -882,7 +775,6 @@
     let best = -INF;
     let bestMoveKey = null;
     let bestPV = [];
-
     const alphaOrig = alpha;
 
     for (const mv of moves){
@@ -906,33 +798,26 @@
         bestPV = [bestMoveKey, ...res.pv];
       }
       alpha = Math.max(alpha, score);
-      if (alpha >= beta) break; // βカット
+      if (alpha >= beta) break;
     }
 
-    // TT保存（flag付き）
     let flag = 0;
-    if (best <= alphaOrig) flag = 2; // upper
-    else if (best >= beta) flag = 1; // lower
-    else flag = 0; // exact
+    if (best <= alphaOrig) flag = 2;
+    else if (best >= beta) flag = 1;
+    else flag = 0;
 
     ttSet(hash, {depth, flag, value: best, bestMoveKey, pv: bestPV});
-
     return {value: best, nodes, pv: bestPV};
   }
 
   function applyMoveAndHash(mv, player){
-    // 盤面変更＆hash更新（差分だけxor）
     const changed = [];
-    // 置く
     changed.push([mv.r, mv.c, EMPTY, player]);
     hash = hashXorPiece(hash, mv.r, mv.c, player);
     board[mv.r][mv.c] = player;
 
-    // 反転
     for (const [rr,cc] of mv.flips){
       const prev = board[rr][cc];
-      // prev は -player のはず
-      // hash: prev を消して new を足す
       hash = hashXorPiece(hash, rr, cc, prev);
       hash = hashXorPiece(hash, rr, cc, player);
       board[rr][cc] = player;
@@ -944,14 +829,12 @@
   function undoMoveAndHash(changed){
     for (let i=changed.length-1;i>=0;i--){
       const [r,c,prev,now] = changed[i];
-      // hash: now を消して prev を戻す
       if (now !== EMPTY) hash = hashXorPiece(hash, r, c, now);
       if (prev !== EMPTY) hash = hashXorPiece(hash, r, c, prev);
       board[r][c] = prev;
     }
   }
 
-  // ====== 描画 ======
   function buildGrid(){
     gridEl.innerHTML = "";
     for (let r=0;r<N;r++){
@@ -976,33 +859,29 @@
     const moves = getLegalMoves(board, turn);
     const showEval = showEvalEl.checked;
 
-    // ヒント：合法手スコア（探索で“その手の最善値”を出す）
-    // ただし毎回全合法手に深探索すると重いので、
-    // 1) 表示ONのときだけ
-    // 2) 深さを少し抑え、TTを活用
-    const hintScores = new Map(); // key "r,c" -> score
+    const hintScores = new Map();
     let minS=0, maxS=0, mid=0;
 
     if (showEval && moves.length>0){
-      const timeLimit = 180; // 表示用は軽く（ms）
+      const timeLimit = 180;
       const maxDepth = Math.max(3, Math.min(7, Number(maxDepthEl.value)||7));
       const start = nowMs();
       const deadline = start + timeLimit;
 
-      // TT best
       const tt = ttGet(hash);
       const ttBestKey = tt?.bestMoveKey ?? null;
       const ordered = orderMoves(board, turn, moves, ttBestKey);
 
-      // ルート各手を浅めに評価（negamax）
       let scores = [];
       for (const mv of ordered){
         if (nowMs() > deadline) break;
+
         const changed = applyMoveAndHash(mv, turn);
         hash = hashToggleSide(hash);
         turn = -turn;
 
-        const res = alphabeta(board, -turn, maxDepth-1, -INF, INF, deadline);
+        // ★修正点：ここは「いまの手番側（＝turn）」で探索する
+        const res = alphabeta(board, turn, maxDepth-1, -INF, INF, deadline);
         const score = -res.value;
 
         turn = -turn;
@@ -1020,7 +899,6 @@
       }
     }
 
-    // マス描画
     const cells = gridEl.children;
     for (let i=0;i<cells.length;i++){
       const el = cells[i];
@@ -1049,7 +927,6 @@
       }
     }
 
-    // ログ
     if (moves.length===0){
       debugEl.textContent = "合法手がありません。パスしてください。";
     } else {
@@ -1062,7 +939,6 @@
   }
 
   function fmt(x){
-    // 大きい値も見やすく
     const v = Math.round(x);
     if (v >= 100000000) return "∞";
     if (v <= -100000000) return "-∞";
@@ -1071,18 +947,15 @@
 
   function pushHistory(){
     history.push({board: cloneBoard(board), turn, hash});
-    // 連打で溜まりすぎないように上限
     if (history.length > 200) history.shift();
   }
 
-  // ====== クリック処理 ======
   function onCellClick(e){
     if (thinking) return;
 
     const r = Number(e.currentTarget.dataset.r);
     const c = Number(e.currentTarget.dataset.c);
 
-    // AIの番なら人間クリックは無効（混乱防止）
     const aiSide = getAISide();
     if (aiSide !== null && turn === aiSide) return;
 
@@ -1091,9 +964,7 @@
     if (!mv) return;
 
     pushHistory();
-    // 盤面とhashを適切に更新（applyMoveAndHashを使う）
     applyMoveAndHash(mv, turn);
-    // 手番交代
     hash = hashToggleSide(hash);
     turn = -turn;
 
@@ -1109,7 +980,6 @@
   }
 
   function maybeAutoAIMove(){
-    // 自動でAIが打つ
     void doAIMoveIfNeeded(false);
   }
 
@@ -1139,9 +1009,6 @@
 
       if (!res.bestMove){
         flashDebug("AIが手を選べませんでした（異常）。");
-        thinking = false;
-        aiMoveBtn.textContent = "AIに1手打たせる";
-        aiMoveBtn.disabled = false;
         return;
       }
 
@@ -1150,7 +1017,6 @@
       hash = hashToggleSide(hash);
       turn = -turn;
 
-      // ログ
       const rc = `(${res.bestMove.r+1},${res.bestMove.c+1})`;
       debugEl.textContent =
         `AI着手: ${rc}\n` +
@@ -1166,7 +1032,6 @@
       thinking = false;
       aiMoveBtn.textContent = "AIに1手打たせる";
       aiMoveBtn.disabled = false;
-      // 連続でAI同士になる場合（両方AI設定はUIにないけど）に備え
     }
   }
 
