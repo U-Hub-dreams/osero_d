@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Webオセロ（合法手に評価値表示）</title>
+  <title>強さ優先 Webオセロ（合法手に探索評価表示）</title>
   <style>
     :root{
       --bg:#0b1220;
@@ -16,6 +16,7 @@
       --accent:#60a5fa;
       --good:#34d399;
       --bad:#fb7185;
+      --warn:#fbbf24;
     }
     *{box-sizing:border-box}
     body{
@@ -25,14 +26,14 @@
       color:var(--text);
     }
     .wrap{
-      max-width: 1100px;
+      max-width: 1180px;
       margin: 20px auto;
       padding: 16px;
       display:grid;
-      grid-template-columns: 1fr 320px;
+      grid-template-columns: 1fr 360px;
       gap:16px;
     }
-    @media (max-width: 900px){
+    @media (max-width: 980px){
       .wrap{grid-template-columns:1fr}
     }
     .card{
@@ -60,7 +61,7 @@
       color: var(--muted);
     }
     .board{
-      width: min(70vh, 620px);
+      width: min(72vh, 660px);
       aspect-ratio: 1 / 1;
       margin: 0 auto;
       background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
@@ -82,7 +83,8 @@
     .cell{
       position:relative;
       border-radius: 12px;
-      background: radial-gradient(140px 140px at 20% 20%, rgba(255,255,255,0.12), rgba(255,255,255,0.02)), linear-gradient(180deg, #0f6b47, var(--cell));
+      background: radial-gradient(140px 140px at 20% 20%, rgba(255,255,255,0.12), rgba(255,255,255,0.02)),
+                  linear-gradient(180deg, #0f6b47, var(--cell));
       border:1px solid rgba(0,0,0,0.25);
       cursor:pointer;
       user-select:none;
@@ -97,7 +99,6 @@
       inset: 12%;
       border-radius:999px;
       box-shadow: 0 10px 16px rgba(0,0,0,0.35);
-      transform: translateZ(0);
     }
     .black{
       background: radial-gradient(140px 140px at 30% 25%, #3b3b3b 0%, #0c0c0c 55%, #000 100%);
@@ -105,14 +106,15 @@
     .white{
       background: radial-gradient(140px 140px at 30% 25%, #ffffff 0%, #e6e6e6 55%, #cfcfcf 100%);
     }
+
     .hint{
       position:absolute;
       inset:0;
       display:flex;
       align-items:center;
       justify-content:center;
-      font-size: 13px;
-      font-weight: 800;
+      font-size: 12.5px;
+      font-weight: 900;
       letter-spacing: .02em;
       text-shadow: 0 2px 10px rgba(0,0,0,0.55);
       pointer-events:none;
@@ -120,14 +122,15 @@
     .hint .badge{
       padding: 6px 8px;
       border-radius: 10px;
-      background: rgba(15, 27, 52, 0.72);
+      background: rgba(15, 27, 52, 0.74);
       border: 1px solid rgba(255,255,255,0.14);
-      min-width: 52px;
+      min-width: 58px;
       text-align:center;
       backdrop-filter: blur(4px);
     }
     .hint.good .badge{ color: var(--good); }
     .hint.bad .badge{ color: var(--bad); }
+    .hint.neutral .badge{ color: #d7e3ff; }
 
     .right .row{
       display:flex;
@@ -161,15 +164,20 @@
       background: rgba(96,165,250,0.18);
       color: var(--text);
       border: 1px solid rgba(96,165,250,0.35);
-      font-weight: 700;
+      font-weight: 800;
       letter-spacing: .01em;
     }
     button:hover{background: rgba(96,165,250,0.28)}
     button:active{transform: translateY(1px)}
+    button.secondary{
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+    }
+    button.secondary:hover{background: rgba(255,255,255,0.10)}
     .small{
       font-size: 12px;
       color: var(--muted);
-      line-height: 1.55;
+      line-height: 1.6;
     }
     .kv{
       margin-top:12px;
@@ -207,13 +215,18 @@
       font-size: 13px;
     }
     input[type="checkbox"]{transform: scale(1.1)}
-    select{
+    select, input[type="number"]{
       background: rgba(15,27,52,0.65);
       color: var(--text);
       border:1px solid rgba(255,255,255,0.14);
       border-radius: 10px;
       padding: 8px 10px;
-      font-weight: 700;
+      font-weight: 800;
+      width: 120px;
+    }
+    .warn{
+      color: var(--warn);
+      font-weight: 800;
     }
   </style>
 </head>
@@ -221,8 +234,8 @@
   <div class="wrap">
     <div class="card">
       <div class="title">
-        <h1>Webオセロ：合法手に評価値を表示</h1>
-        <div class="sub">クリックで着手（黒→白→…）</div>
+        <h1>強さ優先 Webオセロ：合法手に「探索評価値」表示</h1>
+        <div class="sub">黒/白のどちらでもAIにできる（右の設定）</div>
       </div>
 
       <div class="board">
@@ -230,7 +243,8 @@
       </div>
 
       <div class="small" style="margin-top:10px;">
-        表示している数値は「その手を打った直後の盤面」を、簡易評価関数で採点したものです（大きいほど良い）。
+        表示している数値は「その手を選んだときの最善値（αβ探索）」です。<br/>
+        スコアは手番側にとって大きいほど良い（+ が有利 / - が不利）。終盤は石差の比重が強くなります。
       </div>
     </div>
 
@@ -238,44 +252,56 @@
       <div class="row">
         <span class="pill"><span class="dot"></span><span id="turnLabel">手番：黒</span></span>
         <span class="pill">黒 <b id="blackCount">2</b> / 白 <b id="whiteCount">2</b></span>
+        <span class="pill">空き <b id="emptyCount">60</b></span>
       </div>
 
       <div class="row">
         <label class="toggle">
           <input id="showEval" type="checkbox" checked />
-          合法手の評価値を表示
+          合法手の探索評価を表示
         </label>
 
         <label class="toggle">
-          <span style="opacity:.9;">評価方式</span>
-          <select id="evalMode">
-            <option value="balanced" selected>バランス</option>
-            <option value="mobility">モビリティ重視</option>
-            <option value="positional">位置重視</option>
+          <span>AI</span>
+          <select id="aiSide">
+            <option value="WHITE" selected>白がAI</option>
+            <option value="BLACK">黒がAI</option>
+            <option value="NONE">AIなし</option>
           </select>
         </label>
       </div>
 
+      <div class="row">
+        <label class="toggle">
+          <span>思考(ms)</span>
+          <input id="thinkMs" type="number" min="50" max="5000" value="800" />
+        </label>
+        <label class="toggle">
+          <span>最大深さ</span>
+          <input id="maxDepth" type="number" min="2" max="20" value="11" />
+        </label>
+      </div>
+
       <div class="btns">
-        <button id="undoBtn">1手戻す</button>
-        <button id="resetBtn">初期化</button>
-        <button id="passBtn">パス（手が無い時）</button>
+        <button id="aiMoveBtn">AIに1手打たせる</button>
+        <button id="undoBtn" class="secondary">1手戻す</button>
+        <button id="resetBtn" class="secondary">初期化</button>
+        <button id="passBtn" class="secondary">パス（手が無い時）</button>
       </div>
 
       <div class="kv">
         <div class="box">
-          <h3>この評価で見ているもの</h3>
+          <h3>強さの中身</h3>
           <div class="small">
-            ・位置重み（角・辺の価値）<br/>
-            ・モビリティ（次の合法手数）<br/>
-            ・角取得ボーナス / 角隣接ペナルティ<br/>
-            ・石差（控えめ）<br/>
-            ※「強いAI」の完全版は探索（ミニマックス＋αβ）もしますが、ここでは“競技AIでよく見る要素”を点数化しています。
+            ・反復深化＋αβ（手の並べ替えあり）<br/>
+            ・Zobristハッシュ＋TT（置換表）<br/>
+            ・評価：角/辺、危険マス(C/X)、モビリティ、フロンティア、石差（終盤強め）、簡易安定度、パリティ<br/>
+            <span class="warn">※ 端末性能により深さが伸びます（思考msを増やすほど強い）。</span>
           </div>
         </div>
 
         <div class="box">
-          <h3>デバッグ表示</h3>
+          <h3>ログ</h3>
           <div id="debug" class="mono"></div>
         </div>
       </div>
@@ -284,22 +310,10 @@
 
 <script>
 (() => {
-  // ====== 定数 ======
+  // ====== 基本定数 ======
   const N = 8;
   const EMPTY = 0, BLACK = 1, WHITE = -1;
-
-  // 競技AIで定番の「位置重み」系（簡易）
-  // 角が高く、角の隣（C/X）が低い、辺がそこそこ…という典型形
-  const WEIGHTS = [
-    [120,-20, 20,  5,  5, 20,-20,120],
-    [-20,-40, -5, -5, -5, -5,-40,-20],
-    [ 20, -5, 15,  3,  3, 15, -5, 20],
-    [  5, -5,  3,  3,  3,  3, -5,  5],
-    [  5, -5,  3,  3,  3,  3, -5,  5],
-    [ 20, -5, 15,  3,  3, 15, -5, 20],
-    [-20,-40, -5, -5, -5, -5,-40,-20],
-    [120,-20, 20,  5,  5, 20,-20,120],
-  ];
+  const INF = 1e15;
 
   const DIRS = [
     [-1,-1],[-1,0],[-1,1],
@@ -307,88 +321,117 @@
     [ 1,-1],[ 1,0],[ 1,1],
   ];
 
-  // 評価係数（モードで切替）
-  const COEFF = {
-    balanced:   { pos: 1.0, mob: 12.0, corner: 25.0, cornerAdj: 18.0, disc: 1.0 },
-    mobility:   { pos: 0.7, mob: 18.0, corner: 22.0, cornerAdj: 16.0, disc: 0.7 },
-    positional: { pos: 1.2, mob:  9.0, corner: 28.0, cornerAdj: 20.0, disc: 0.9 },
-  };
+  // 位置重み（強めの形）
+  const PST = [
+    [120,-20, 20,  5,  5, 20,-20,120],
+    [-20,-60, -5, -5, -5, -5,-60,-20],
+    [ 20, -5, 15,  3,  3, 15, -5, 20],
+    [  5, -5,  3,  3,  3,  3, -5,  5],
+    [  5, -5,  3,  3,  3,  3, -5,  5],
+    [ 20, -5, 15,  3,  3, 15, -5, 20],
+    [-20,-60, -5, -5, -5, -5,-60,-20],
+    [120,-20, 20,  5,  5, 20,-20,120],
+  ];
 
-  // 角と、その隣接（C/X）座標
   const CORNERS = [[0,0],[0,7],[7,0],[7,7]];
-  const CORNER_ADJ = new Map([
-    ["0,0",  [[0,1],[1,0],[1,1]]],
-    ["0,7",  [[0,6],[1,7],[1,6]]],
-    ["7,0",  [[6,0],[7,1],[6,1]]],
-    ["7,7",  [[6,7],[7,6],[6,6]]],
-  ]);
+  const X_SQ = [[1,1],[1,6],[6,1],[6,6]]; // 角斜め（X）
+  const C_SQ = [[0,1],[1,0],[0,6],[1,7],[6,0],[7,1],[6,7],[7,6]]; // 角隣接（C）
 
-  // ====== 状態 ======
-  let board = makeEmptyBoard();
-  let turn = BLACK;
-  let history = []; // undo用（盤面スナップショット）
-
-  // UI
+  // ====== UI ======
   const gridEl = document.getElementById("grid");
   const turnLabel = document.getElementById("turnLabel");
   const blackCountEl = document.getElementById("blackCount");
   const whiteCountEl = document.getElementById("whiteCount");
+  const emptyCountEl = document.getElementById("emptyCount");
   const debugEl = document.getElementById("debug");
+
   const showEvalEl = document.getElementById("showEval");
-  const evalModeEl = document.getElementById("evalMode");
+  const aiSideEl = document.getElementById("aiSide");
+  const thinkMsEl = document.getElementById("thinkMs");
+  const maxDepthEl = document.getElementById("maxDepth");
+
+  const aiMoveBtn = document.getElementById("aiMoveBtn");
   const undoBtn = document.getElementById("undoBtn");
   const resetBtn = document.getElementById("resetBtn");
   const passBtn = document.getElementById("passBtn");
 
+  // ====== 状態 ======
+  let board = makeEmptyBoard();
+  let turn = BLACK;
+  let history = [];
+
+  // TT（置換表）
+  // key: hash (string) -> { depth, flag, value, bestMoveKey }
+  // flag: 0 exact, 1 lowerbound, 2 upperbound
+  const TT = new Map();
+
+  // Zobrist
+  const Z = initZobrist();
+  let hash = 0n;
+
+  // 反復深化の管理
+  let thinking = false;
+
   // ====== 初期化 ======
   initBoard(board);
+  hash = computeHash(board);
   buildGrid();
   render();
+  maybeAutoAIMove();
 
   // ====== イベント ======
   showEvalEl.addEventListener("change", render);
-  evalModeEl.addEventListener("change", render);
+  aiSideEl.addEventListener("change", () => { render(); maybeAutoAIMove(); });
+  thinkMsEl.addEventListener("change", () => { /* noop */ });
+  maxDepthEl.addEventListener("change", () => { /* noop */ });
+
+  aiMoveBtn.addEventListener("click", async () => {
+    if (thinking) return;
+    await doAIMoveIfNeeded(true);
+  });
 
   undoBtn.addEventListener("click", () => {
-    if (history.length === 0) return;
+    if (history.length === 0 || thinking) return;
     const prev = history.pop();
     board = prev.board;
     turn = prev.turn;
+    hash = prev.hash;
     render();
   });
 
   resetBtn.addEventListener("click", () => {
+    if (thinking) return;
     board = makeEmptyBoard();
     initBoard(board);
     turn = BLACK;
     history = [];
+    TT.clear();
+    hash = computeHash(board);
     render();
+    maybeAutoAIMove();
   });
 
   passBtn.addEventListener("click", () => {
+    if (thinking) return;
     const moves = getLegalMoves(board, turn);
     if (moves.length > 0) {
       flashDebug("まだ合法手があります。パスは不要です。");
       return;
     }
-    history.push({ board: cloneBoard(board), turn });
+    pushHistory();
     turn = -turn;
     render();
+    maybeAutoAIMove();
   });
 
-  // ====== 盤面・合法手 ======
+  // ====== 盤面 ======
   function makeEmptyBoard(){
     return Array.from({length:N}, () => Array(N).fill(EMPTY));
   }
-  function cloneBoard(b){
-    return b.map(row => row.slice());
-  }
+  function cloneBoard(b){ return b.map(r => r.slice()); }
   function initBoard(b){
-    // 標準初期配置
-    b[3][3] = WHITE;
-    b[3][4] = BLACK;
-    b[4][3] = BLACK;
-    b[4][4] = WHITE;
+    b[3][3]=WHITE; b[3][4]=BLACK;
+    b[4][3]=BLACK; b[4][4]=WHITE;
   }
   function inBounds(r,c){ return r>=0 && r<N && c>=0 && c<N; }
 
@@ -396,15 +439,14 @@
     if (b[r][c] !== EMPTY) return [];
     const opp = -player;
     let flips = [];
-
     for (const [dr,dc] of DIRS){
-      let rr = r + dr, cc = c + dc;
-      let line = [];
-      while (inBounds(rr,cc) && b[rr][cc] === opp){
+      let rr=r+dr, cc=c+dc;
+      let line=[];
+      while (inBounds(rr,cc) && b[rr][cc]===opp){
         line.push([rr,cc]);
-        rr += dr; cc += dc;
+        rr+=dr; cc+=dc;
       }
-      if (line.length > 0 && inBounds(rr,cc) && b[rr][cc] === player){
+      if (line.length>0 && inBounds(rr,cc) && b[rr][cc]===player){
         flips = flips.concat(line);
       }
     }
@@ -412,73 +454,501 @@
   }
 
   function getLegalMoves(b, player){
-    const moves = [];
+    const res=[];
     for (let r=0;r<N;r++){
       for (let c=0;c<N;c++){
         const flips = getFlips(b,r,c,player);
-        if (flips.length > 0) moves.push({r,c,flips});
+        if (flips.length) res.push({r,c,flips});
       }
     }
-    return moves;
+    return res;
   }
 
-  function applyMove(b, move, player){
-    const nb = cloneBoard(b);
-    nb[move.r][move.c] = player;
-    for (const [rr,cc] of move.flips) nb[rr][cc] = player;
-    return nb;
+  function applyMoveInPlace(b, move, player){
+    // in-place + hash 更新用に返り値として変更箇所を返す
+    const changed = [];
+    b[move.r][move.c] = player;
+    changed.push([move.r, move.c, EMPTY, player]);
+    for (const [rr,cc] of move.flips){
+      const prev = b[rr][cc];
+      b[rr][cc] = player;
+      changed.push([rr, cc, prev, player]);
+    }
+    return changed;
   }
 
-  // ====== 評価関数（合法手に表示する値） ======
-  function evaluateBoard(b, player, modeKey){
-    // player 視点で大きいほど良い
-    const k = COEFF[modeKey] ?? COEFF.balanced;
+  function undoMoveInPlace(b, changed){
+    for (let i=changed.length-1;i>=0;i--){
+      const [r,c,prev,_now] = changed[i];
+      b[r][c] = prev;
+    }
+  }
 
-    const counts = countDiscs(b);
-    const discDiff = (counts.black - counts.white) * player; // player視点
-    const discTerm = k.disc * discDiff;
-
-    // 位置重み合計
-    let posSum = 0;
+  function countDiscs(b){
+    let black=0, white=0, empty=0;
     for (let r=0;r<N;r++){
       for (let c=0;c<N;c++){
-        posSum += WEIGHTS[r][c] * b[r][c] * player; // player視点に寄せる
+        if (b[r][c]===BLACK) black++;
+        else if (b[r][c]===WHITE) white++;
+        else empty++;
       }
     }
-    const posTerm = k.pos * posSum;
+    return {black,white,empty};
+  }
 
-    // モビリティ：自分の合法手 - 相手の合法手
+  // ====== Zobrist ======
+  function initZobrist(){
+    // [r][c][pieceIndex] pieceIndex: 0 black, 1 white
+    const z = Array.from({length:N}, () =>
+      Array.from({length:N}, () => [rand64(), rand64()])
+    );
+    const side = rand64();
+    return {z, side};
+  }
+  function rand64(){
+    // BigInt 64bit 擬似乱数（ブラウザ標準の crypto を使用）
+    const u = new Uint32Array(2);
+    crypto.getRandomValues(u);
+    return (BigInt(u[0]) << 32n) ^ BigInt(u[1]);
+  }
+  function computeHash(b){
+    let h=0n;
+    for (let r=0;r<N;r++){
+      for (let c=0;c<N;c++){
+        if (b[r][c]===BLACK) h ^= Z.z[r][c][0];
+        else if (b[r][c]===WHITE) h ^= Z.z[r][c][1];
+      }
+    }
+    if (turn===BLACK) h ^= Z.side;
+    return h;
+  }
+  function hashToggleSide(h){ return h ^ Z.side; }
+  function hashXorPiece(h, r, c, piece){
+    if (piece===BLACK) return h ^ Z.z[r][c][0];
+    if (piece===WHITE) return h ^ Z.z[r][c][1];
+    return h;
+  }
+
+  function moveKey(m){ return (m.r<<3) | m.c; }
+  function keyToRC(k){ return {r:(k>>3)&7, c:k&7}; }
+
+  // ====== 評価関数（強め・フェーズ依存） ======
+  // スコアは「player視点で大きいほど良い」
+  function evaluate(b, player){
+    const {black, white, empty} = countDiscs(b);
+    const discs = black + white;
+    const phase = discs / 64; // 0->1
+
+    // フェーズで重みを変える（序盤:モビリティ/危険回避、中盤:形、終盤:石差）
+    const wMob = lerp(18, 6, phase);
+    const wPos = lerp(10, 16, phase);
+    const wDisc = lerp(1, 28, phase);      // 終盤ほど石差を強く
+    const wFrontier = lerp(10, 4, phase);  // 序盤ほどフロンティア（外周石）を嫌う
+    const wCorner = 60;
+    const wParity = lerp(0, 8, phase);     // 終盤寄りで効かせる
+    const wStab = lerp(0, 10, phase);      // 簡易安定度
+
+    // 位置重み
+    let pos=0;
+    for (let r=0;r<N;r++){
+      for (let c=0;c<N;c++){
+        pos += PST[r][c] * b[r][c];
+      }
+    }
+    pos *= player;
+
+    // 角
+    let corner=0;
+    for (const [r,c] of CORNERS){
+      corner += b[r][c];
+    }
+    corner *= player;
+
+    // 危険マス（角が空のときのC/Xは致命傷になりやすい）
+    let danger=0;
+    for (let i=0;i<4;i++){
+      const [cr,cc] = CORNERS[i];
+      if (b[cr][cc] !== EMPTY) continue;
+      const [xr,xc] = X_SQ[i];
+      danger -= 3 * b[xr][xc]; // Xは特に危険
+    }
+    for (const [r,c] of C_SQ){
+      // Cも危険（角が空なら）
+      const corner = nearestCorner(r,c);
+      if (corner && b[corner.r][corner.c]===EMPTY){
+        danger -= 2 * b[r][c];
+      }
+    }
+    danger *= player;
+
+    // モビリティ
     const myMob = getLegalMoves(b, player).length;
     const opMob = getLegalMoves(b, -player).length;
-    const mobTerm = k.mob * (myMob - opMob);
+    const mob = (myMob - opMob);
 
-    // 角：自分の角 - 相手の角
-    let myCorner = 0, opCorner = 0;
-    for (const [r,c] of CORNERS){
-      if (b[r][c] === player) myCorner++;
-      else if (b[r][c] === -player) opCorner++;
-    }
-    const cornerTerm = k.corner * (myCorner - opCorner);
+    // フロンティア（空きマスに隣接している石の数：少ないほど良い）
+    const frontier = (frontierCount(b, player) - frontierCount(b, -player));
 
-    // 角の隣（C/X）：角が空いてる時に隣に置くのは危険…をペナルティ化
-    // 「自分が角隣接を持つほどマイナス」「相手が持つほどプラス」
-    let adjScore = 0;
-    for (const [cr,cc] of CORNERS){
-      if (b[cr][cc] !== EMPTY) continue; // 角が埋まってたら危険度が変わるので簡略化して無視
-      const key = `${cr},${cc}`;
-      for (const [ar,ac] of (CORNER_ADJ.get(key) ?? [])){
-        if (b[ar][ac] === player) adjScore -= 1;
-        else if (b[ar][ac] === -player) adjScore += 1;
+    // 簡易安定度（端から連続して自色で埋まってる部分を安定寄りに評価）
+    const stab = (stableEdgeApprox(b, player) - stableEdgeApprox(b, -player));
+
+    // パリティ（終盤：空き領域の偶奇）
+    const parity = parityScore(b, player);
+
+    // 石差
+    const discDiff = (black - white) * player;
+
+    // 合成
+    const score =
+      wPos*pos +
+      wCorner*corner +
+      12*danger +
+      wMob*mob +
+      (-wFrontier)*frontier +
+      wStab*stab +
+      wParity*parity +
+      wDisc*discDiff;
+
+    // 返り値は探索に使いやすい大きさに丸める
+    return score;
+  }
+
+  function lerp(a,b,t){ return a + (b-a)*t; }
+
+  function nearestCorner(r,c){
+    // 角隣接(C)用の判定（簡易）
+    if (r<=1 && c<=1) return {r:0,c:0};
+    if (r<=1 && c>=6) return {r:0,c:7};
+    if (r>=6 && c<=1) return {r:7,c:0};
+    if (r>=6 && c>=6) return {r:7,c:7};
+    return null;
+  }
+
+  function frontierCount(b, player){
+    let cnt=0;
+    for (let r=0;r<N;r++){
+      for (let c=0;c<N;c++){
+        if (b[r][c] !== player) continue;
+        for (const [dr,dc] of DIRS){
+          const rr=r+dr, cc=c+dc;
+          if (inBounds(rr,cc) && b[rr][cc]===EMPTY){
+            cnt++;
+            break;
+          }
+        }
       }
     }
-    const cornerAdjTerm = k.cornerAdj * adjScore;
+    return cnt;
+  }
 
-    const total = posTerm + mobTerm + cornerTerm + cornerAdjTerm + discTerm;
+  function stableEdgeApprox(b, player){
+    // 端から角方向に連続している石を「安定っぽい」と見なす簡易近似
+    let s=0;
+    // 上端
+    s += stableRun(b, player, 0,0, 0,1);
+    s += stableRun(b, player, 0,7, 0,-1);
+    // 下端
+    s += stableRun(b, player, 7,0, 0,1);
+    s += stableRun(b, player, 7,7, 0,-1);
+    // 左端
+    s += stableRun(b, player, 0,0, 1,0);
+    s += stableRun(b, player, 7,0, -1,0);
+    // 右端
+    s += stableRun(b, player, 0,7, 1,0);
+    s += stableRun(b, player, 7,7, -1,0);
+    return s;
+  }
+  function stableRun(b, player, r, c, dr, dc){
+    let cnt=0;
+    for (let i=0;i<8;i++){
+      const rr=r+dr*i, cc=c+dc*i;
+      if (!inBounds(rr,cc)) break;
+      if (b[rr][cc]===player) cnt++;
+      else break;
+    }
+    return cnt;
+  }
 
-    return {
-      total,
-      parts: { posTerm, mobTerm, cornerTerm, cornerAdjTerm, discTerm, myMob, opMob, discDiff, myCorner, opCorner }
-    };
+  function parityScore(b, player){
+    // 空きマスの連結成分ごとの偶奇（終盤用の簡易パリティ）
+    // ここは軽めに：全体の空き偶奇だけでも十分効く場面がある
+    const {empty} = countDiscs(b);
+    return (empty % 2 === 0) ? 1 : -1;
+  }
+
+  // ====== 探索（反復深化 + αβ + TT） ======
+  function isGameOver(b){
+    return getLegalMoves(b, BLACK).length===0 && getLegalMoves(b, WHITE).length===0;
+  }
+
+  function terminalScore(b, player){
+    const {black,white} = countDiscs(b);
+    const diff = (black-white)*player;
+    // 勝ち負けを強調（完全終局のときは評価より優先）
+    if (diff>0) return 1e9 + diff;
+    if (diff<0) return -1e9 + diff;
+    return 0;
+  }
+
+  function orderMoves(b, player, moves, ttBestKey){
+    // 強い並べ替え：TTの最善→角→辺→PST高→返し枚数少→危険回避
+    const scored = moves.map(m => {
+      const k = moveKey(m);
+      let s = 0;
+      if (ttBestKey !== null && k === ttBestKey) s += 1e9;
+
+      // 角
+      if ((m.r===0||m.r===7) && (m.c===0||m.c===7)) s += 5e8;
+
+      // X/C（角が空なら避けたい）
+      if (isXSquare(m.r,m.c)) s -= 2e8;
+      if (isCSquare(m.r,m.c)) s -= 1e8;
+
+      // 辺
+      if (m.r===0||m.r===7||m.c===0||m.c===7) s += 2e7;
+
+      // 位置重み（手番視点）
+      s += 1e6 * PST[m.r][m.c];
+
+      // 返す枚数は少なめが安全なことが多い（序中盤）
+      s -= 2e4 * m.flips.length;
+
+      // 1手だけ浅く見る（高速）…着手後モビリティ差
+      // ただし重いのでほどほど
+      const nb = cloneBoard(b);
+      nb[m.r][m.c] = player;
+      for (const [rr,cc] of m.flips) nb[rr][cc] = player;
+      const mob = getLegalMoves(nb, player).length - getLegalMoves(nb, -player).length;
+      s += 5e4 * mob;
+
+      return {m, k, s};
+    });
+    scored.sort((a,b)=> b.s-a.s);
+    return scored.map(x=>x.m);
+  }
+
+  function isXSquare(r,c){
+    return (r===1&&c===1)||(r===1&&c===6)||(r===6&&c===1)||(r===6&&c===6);
+  }
+  function isCSquare(r,c){
+    for (const [rr,cc] of C_SQ) if (rr===r && cc===c) return true;
+    return false;
+  }
+
+  function ttGet(h){
+    const k = h.toString();
+    return TT.get(k) ?? null;
+  }
+  function ttSet(h, entry){
+    const k = h.toString();
+    // メモリ暴走防止：サイズが大きくなりすぎたら軽く掃除
+    if (TT.size > 220000){
+      // ランダムに少し削る（雑だが軽い）
+      let i=0;
+      for (const key of TT.keys()){
+        TT.delete(key);
+        if (++i>70000) break;
+      }
+    }
+    TT.set(k, entry);
+  }
+
+  function nowMs(){ return performance.now(); }
+
+  async function findBestMoveRoot(b, player, timeLimitMs, maxDepth){
+    // 反復深化。時間を超えたら直前深さの最善を返す
+    const start = nowMs();
+    const deadline = start + timeLimitMs;
+
+    let bestMove = null;
+    let bestScore = -INF;
+    let bestPV = [];
+    let nodes = 0;
+
+    // ルートの合法手
+    let rootMoves = getLegalMoves(b, player);
+    if (rootMoves.length===0) return {bestMove:null, bestScore: -INF, depth:0, nodes:0, pv:[]};
+
+    // 初回並べ替えに TT を使う
+    const tt = ttGet(hash);
+    const ttBestKey = tt?.bestMoveKey ?? null;
+    rootMoves = orderMoves(b, player, rootMoves, ttBestKey);
+
+    for (let depth=1; depth<=maxDepth; depth++){
+      if (nowMs() > deadline) break;
+
+      let localBestMove = null;
+      let localBestScore = -INF;
+      let localBestPV = [];
+
+      // aspiration window（軽い）
+      let alpha = -INF;
+      let beta  = INF;
+
+      for (const mv of rootMoves){
+        if (nowMs() > deadline) break;
+
+        const changed = applyMoveAndHash(mv, player);
+        const childHashBeforeSide = hash; // applyMoveAndHashで盤面とhashが更新済
+        // 手番交代
+        hash = hashToggleSide(hash);
+        turn = -turn;
+
+        const res = alphabeta(b, -player, depth-1, alpha, beta, deadline);
+        nodes += res.nodes;
+        const score = -res.value;
+
+        // 元に戻す
+        turn = -turn;
+        hash = hashToggleSide(hash);
+        undoMoveAndHash(changed);
+        // childHashBeforeSide は不要
+
+        if (score > localBestScore){
+          localBestScore = score;
+          localBestMove = mv;
+          localBestPV = [moveKey(mv), ...res.pv];
+          alpha = Math.max(alpha, score);
+        }
+      }
+
+      if (localBestMove){
+        bestMove = localBestMove;
+        bestScore = localBestScore;
+        bestPV = localBestPV;
+
+        // 次深さの並べ替え：今回のベストを先頭に（PV move ordering）
+        rootMoves = orderMoves(b, player, rootMoves, moveKey(bestMove));
+      }
+
+      // UIに負担かけない程度にyield
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    // ルートTT更新
+    ttSet(hash, {depth: 1, flag:0, value: bestScore, bestMoveKey: bestMove ? moveKey(bestMove) : null});
+
+    const depthReached = bestPV.length ? bestPV.length : 0;
+    return {bestMove, bestScore, depth: depthReached, nodes, pv: bestPV};
+  }
+
+  function alphabeta(b, player, depth, alpha, beta, deadline){
+    let nodes = 1;
+
+    // タイムアウト
+    if (nowMs() > deadline) {
+      return {value: evaluate(b, player), nodes, pv: []};
+    }
+
+    // 終局
+    if (isGameOver(b)){
+      return {value: terminalScore(b, player), nodes, pv: []};
+    }
+
+    // 深さ0: 静的評価（簡易qsearchを入れるならここで）
+    if (depth <= 0){
+      return {value: evaluate(b, player), nodes, pv: []};
+    }
+
+    // TT参照
+    const entry = ttGet(hash);
+    if (entry && entry.depth >= depth){
+      if (entry.flag === 0) return {value: entry.value, nodes, pv: [ ...(entry.pv ?? []) ]};
+      if (entry.flag === 1) alpha = Math.max(alpha, entry.value);
+      else if (entry.flag === 2) beta = Math.min(beta, entry.value);
+      if (alpha >= beta) return {value: entry.value, nodes, pv: []};
+    }
+
+    let moves = getLegalMoves(b, player);
+
+    // パス
+    if (moves.length === 0){
+      // 手番交代だけして続行
+      hash = hashToggleSide(hash);
+      turn = -turn;
+      const res = alphabeta(b, -player, depth-1, -beta, -alpha, deadline);
+      const value = -res.value;
+      turn = -turn;
+      hash = hashToggleSide(hash);
+
+      // TT保存
+      ttSet(hash, {depth, flag:0, value, bestMoveKey: null});
+      return {value, nodes: nodes + res.nodes, pv: res.pv};
+    }
+
+    const ttBestKey = entry?.bestMoveKey ?? null;
+    moves = orderMoves(b, player, moves, ttBestKey);
+
+    let best = -INF;
+    let bestMoveKey = null;
+    let bestPV = [];
+
+    const alphaOrig = alpha;
+
+    for (const mv of moves){
+      if (nowMs() > deadline) break;
+
+      const changed = applyMoveAndHash(mv, player);
+      hash = hashToggleSide(hash);
+      turn = -turn;
+
+      const res = alphabeta(b, -player, depth-1, -beta, -alpha, deadline);
+      nodes += res.nodes;
+      const score = -res.value;
+
+      turn = -turn;
+      hash = hashToggleSide(hash);
+      undoMoveAndHash(changed);
+
+      if (score > best){
+        best = score;
+        bestMoveKey = moveKey(mv);
+        bestPV = [bestMoveKey, ...res.pv];
+      }
+      alpha = Math.max(alpha, score);
+      if (alpha >= beta) break; // βカット
+    }
+
+    // TT保存（flag付き）
+    let flag = 0;
+    if (best <= alphaOrig) flag = 2; // upper
+    else if (best >= beta) flag = 1; // lower
+    else flag = 0; // exact
+
+    ttSet(hash, {depth, flag, value: best, bestMoveKey, pv: bestPV});
+
+    return {value: best, nodes, pv: bestPV};
+  }
+
+  function applyMoveAndHash(mv, player){
+    // 盤面変更＆hash更新（差分だけxor）
+    const changed = [];
+    // 置く
+    changed.push([mv.r, mv.c, EMPTY, player]);
+    hash = hashXorPiece(hash, mv.r, mv.c, player);
+    board[mv.r][mv.c] = player;
+
+    // 反転
+    for (const [rr,cc] of mv.flips){
+      const prev = board[rr][cc];
+      // prev は -player のはず
+      // hash: prev を消して new を足す
+      hash = hashXorPiece(hash, rr, cc, prev);
+      hash = hashXorPiece(hash, rr, cc, player);
+      board[rr][cc] = player;
+      changed.push([rr, cc, prev, player]);
+    }
+    return changed;
+  }
+
+  function undoMoveAndHash(changed){
+    for (let i=changed.length-1;i>=0;i--){
+      const [r,c,prev,now] = changed[i];
+      // hash: now を消して prev を戻す
+      if (now !== EMPTY) hash = hashXorPiece(hash, r, c, now);
+      if (prev !== EMPTY) hash = hashXorPiece(hash, r, c, prev);
+      board[r][c] = prev;
+    }
   }
 
   // ====== 描画 ======
@@ -497,35 +967,60 @@
   }
 
   function render(){
-    // カウント
-    const counts = countDiscs(board);
-    blackCountEl.textContent = String(counts.black);
-    whiteCountEl.textContent = String(counts.white);
-    turnLabel.textContent = `手番：${turn === BLACK ? "黒" : "白"}`;
+    const {black, white, empty} = countDiscs(board);
+    blackCountEl.textContent = String(black);
+    whiteCountEl.textContent = String(white);
+    emptyCountEl.textContent = String(empty);
+    turnLabel.textContent = `手番：${turn===BLACK ? "黒" : "白"}`;
 
-    // 合法手
     const moves = getLegalMoves(board, turn);
     const showEval = showEvalEl.checked;
-    const modeKey = evalModeEl.value;
 
-    // 合法手に対し、着手後盤面を評価
-    const evalMap = new Map(); // "r,c" -> {score, detail}
-    if (showEval){
-      for (const mv of moves){
-        const nb = applyMove(board, mv, turn);
-        const ev = evaluateBoard(nb, turn, modeKey); // turn視点
-        evalMap.set(`${mv.r},${mv.c}`, ev);
+    // ヒント：合法手スコア（探索で“その手の最善値”を出す）
+    // ただし毎回全合法手に深探索すると重いので、
+    // 1) 表示ONのときだけ
+    // 2) 深さを少し抑え、TTを活用
+    const hintScores = new Map(); // key "r,c" -> score
+    let minS=0, maxS=0, mid=0;
+
+    if (showEval && moves.length>0){
+      const timeLimit = 180; // 表示用は軽く（ms）
+      const maxDepth = Math.max(3, Math.min(7, Number(maxDepthEl.value)||7));
+      const start = nowMs();
+      const deadline = start + timeLimit;
+
+      // TT best
+      const tt = ttGet(hash);
+      const ttBestKey = tt?.bestMoveKey ?? null;
+      const ordered = orderMoves(board, turn, moves, ttBestKey);
+
+      // ルート各手を浅めに評価（negamax）
+      let scores = [];
+      for (const mv of ordered){
+        if (nowMs() > deadline) break;
+        const changed = applyMoveAndHash(mv, turn);
+        hash = hashToggleSide(hash);
+        turn = -turn;
+
+        const res = alphabeta(board, -turn, maxDepth-1, -INF, INF, deadline);
+        const score = -res.value;
+
+        turn = -turn;
+        hash = hashToggleSide(hash);
+        undoMoveAndHash(changed);
+
+        hintScores.set(`${mv.r},${mv.c}`, score);
+        scores.push(score);
+      }
+
+      if (scores.length){
+        minS = Math.min(...scores);
+        maxS = Math.max(...scores);
+        mid = (minS+maxS)/2;
       }
     }
 
-    // 正規化して色分け（良い/悪い）
-    let scores = [];
-    for (const v of evalMap.values()) scores.push(v.total);
-    const minS = scores.length ? Math.min(...scores) : 0;
-    const maxS = scores.length ? Math.max(...scores) : 0;
-    const mid = (minS + maxS) / 2;
-
-    // 盤面描画
+    // マス描画
     const cells = gridEl.children;
     for (let i=0;i<cells.length;i++){
       const el = cells[i];
@@ -536,94 +1031,152 @@
       const v = board[r][c];
       if (v !== EMPTY){
         const disc = document.createElement("div");
-        disc.className = "disc " + (v === BLACK ? "black" : "white");
+        disc.className = "disc " + (v===BLACK ? "black" : "white");
         el.appendChild(disc);
       }
 
-      // 評価表示（合法手のみ）
       const key = `${r},${c}`;
-      if (evalMap.has(key)){
-        const ev = evalMap.get(key);
+      if (hintScores.has(key)){
+        const sc = hintScores.get(key);
         const hint = document.createElement("div");
-        const isGood = (ev.total >= mid);
-        hint.className = "hint " + (isGood ? "good" : "bad");
+        const cls = (maxS===minS) ? "neutral" : (sc >= mid ? "good" : "bad");
+        hint.className = "hint " + cls;
         const badge = document.createElement("div");
         badge.className = "badge";
-        badge.textContent = formatScore(ev.total);
+        badge.textContent = fmt(sc);
         hint.appendChild(badge);
         el.appendChild(hint);
       }
     }
 
-    // デバッグ：最善手など
-    if (moves.length === 0){
+    // ログ
+    if (moves.length===0){
       debugEl.textContent = "合法手がありません。パスしてください。";
-      return;
+    } else {
+      debugEl.textContent =
+        `合法手: ${moves.length}\n` +
+        `TT size: ${TT.size}\n` +
+        `AI: ${aiSideEl.value}, think=${Number(thinkMsEl.value)||800}ms, maxDepth=${Number(maxDepthEl.value)||11}\n` +
+        `表示用評価: ${showEvalEl.checked ? "ON" : "OFF"}（ONのときは浅探索で各手を採点）`;
     }
-    if (!showEval){
-      debugEl.textContent = `合法手: ${moves.length} 手（評価表示OFF）`;
-      return;
-    }
-
-    // ベストを表示
-    let bestKey = null, bestEv = null;
-    for (const [k, ev] of evalMap.entries()){
-      if (!bestEv || ev.total > bestEv.total){
-        bestEv = ev; bestKey = k;
-      }
-    }
-    const [br, bc] = bestKey.split(",").map(Number);
-    debugEl.textContent =
-      `合法手: ${moves.length} 手 / 評価方式: ${modeKey}\n` +
-      `最善(推定): (${br+1},${bc+1})  score=${formatScore(bestEv.total)}\n` +
-      `内訳: pos=${formatScore(bestEv.parts.posTerm)}  mob=${formatScore(bestEv.parts.mobTerm)}\n` +
-      `      corner=${formatScore(bestEv.parts.cornerTerm)}  adj=${formatScore(bestEv.parts.cornerAdjTerm)}\n` +
-      `      disc=${formatScore(bestEv.parts.discTerm)}  (discDiff=${bestEv.parts.discDiff}, myMob=${bestEv.parts.myMob}, opMob=${bestEv.parts.opMob})`;
   }
 
+  function fmt(x){
+    // 大きい値も見やすく
+    const v = Math.round(x);
+    if (v >= 100000000) return "∞";
+    if (v <= -100000000) return "-∞";
+    return String(v);
+  }
+
+  function pushHistory(){
+    history.push({board: cloneBoard(board), turn, hash});
+    // 連打で溜まりすぎないように上限
+    if (history.length > 200) history.shift();
+  }
+
+  // ====== クリック処理 ======
   function onCellClick(e){
+    if (thinking) return;
+
     const r = Number(e.currentTarget.dataset.r);
     const c = Number(e.currentTarget.dataset.c);
 
+    // AIの番なら人間クリックは無効（混乱防止）
+    const aiSide = getAISide();
+    if (aiSide !== null && turn === aiSide) return;
+
     const moves = getLegalMoves(board, turn);
-    const mv = moves.find(m => m.r === r && m.c === c);
+    const mv = moves.find(m => m.r===r && m.c===c);
     if (!mv) return;
 
-    history.push({ board: cloneBoard(board), turn });
-    board = applyMove(board, mv, turn);
+    pushHistory();
+    // 盤面とhashを適切に更新（applyMoveAndHashを使う）
+    applyMoveAndHash(mv, turn);
+    // 手番交代
+    hash = hashToggleSide(hash);
     turn = -turn;
 
-    // 次手番に合法手が無ければ（簡易）メッセージだけ出す
-    const nextMoves = getLegalMoves(board, turn);
-    if (nextMoves.length === 0){
-      flashDebug("次の手番に合法手がありません。必要ならパスしてください。");
-    }
     render();
+    maybeAutoAIMove();
   }
 
-  function countDiscs(b){
-    let black=0, white=0;
-    for (let r=0;r<N;r++){
-      for (let c=0;c<N;c++){
-        if (b[r][c] === BLACK) black++;
-        else if (b[r][c] === WHITE) white++;
-      }
+  function getAISide(){
+    const v = aiSideEl.value;
+    if (v==="BLACK") return BLACK;
+    if (v==="WHITE") return WHITE;
+    return null;
+  }
+
+  function maybeAutoAIMove(){
+    // 自動でAIが打つ
+    void doAIMoveIfNeeded(false);
+  }
+
+  async function doAIMoveIfNeeded(force){
+    const aiSide = getAISide();
+    if (aiSide === null) return;
+    if (!force && turn !== aiSide) return;
+    if (thinking) return;
+
+    const moves = getLegalMoves(board, turn);
+    if (moves.length === 0){
+      flashDebug("AIの手番ですが合法手がありません。パスしてください。");
+      return;
     }
-    return {black, white};
+
+    thinking = true;
+    aiMoveBtn.textContent = "AI思考中…";
+    aiMoveBtn.disabled = true;
+    try{
+      const timeLimit = clamp(Number(thinkMsEl.value)||800, 50, 5000);
+      const maxDepth = clamp(Number(maxDepthEl.value)||11, 2, 20);
+
+      const startInfo = countDiscs(board);
+      flashDebug(`AI思考開始（空き=${startInfo.empty}）…`);
+
+      const res = await findBestMoveRoot(board, turn, timeLimit, maxDepth);
+
+      if (!res.bestMove){
+        flashDebug("AIが手を選べませんでした（異常）。");
+        thinking = false;
+        aiMoveBtn.textContent = "AIに1手打たせる";
+        aiMoveBtn.disabled = false;
+        return;
+      }
+
+      pushHistory();
+      applyMoveAndHash(res.bestMove, turn);
+      hash = hashToggleSide(hash);
+      turn = -turn;
+
+      // ログ
+      const rc = `(${res.bestMove.r+1},${res.bestMove.c+1})`;
+      debugEl.textContent =
+        `AI着手: ${rc}\n` +
+        `score: ${fmt(res.bestScore)}\n` +
+        `nodes: ${res.nodes}\n` +
+        `pv: ${res.pv.map(k => {
+          const {r,c}=keyToRC(k);
+          return `(${r+1},${c+1})`;
+        }).join(" ")}`;
+
+      render();
+    } finally {
+      thinking = false;
+      aiMoveBtn.textContent = "AIに1手打たせる";
+      aiMoveBtn.disabled = false;
+      // 連続でAI同士になる場合（両方AI設定はUIにないけど）に備え
+    }
   }
 
-  function formatScore(x){
-    // 見た目優先：小数1桁
-    const v = Math.round(x * 10) / 10;
-    // -0 を 0 に
-    return (Object.is(v, -0) ? 0 : v).toFixed(1);
-  }
+  function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
 
-  let flashTimer = null;
+  let flashTimer=null;
   function flashDebug(msg){
     debugEl.textContent = msg;
     if (flashTimer) clearTimeout(flashTimer);
-    flashTimer = setTimeout(() => render(), 900);
+    flashTimer=setTimeout(()=>render(), 900);
   }
 })();
 </script>
